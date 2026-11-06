@@ -18,6 +18,8 @@ The rules have two parts:
 
 `${CLAUDE_SKILL_DIR}` is the folder of this file. If your agent does not replace it, use that folder.
 
+Before step 1, run `npx -y skills check`. If it says that `summarize-pr` has an update, tell the user that `npx skills update summarize-pr -g` installs it. Then continue with this version, also when the command fails.
+
 1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff), `avatars.json` (the avatars of the comment authors) and `removed-tests.txt` (the tests that the PR removes).
 2. Read `description.md`, `threads.json` and the diff. Then read the changed code at the head commit until you know the contracts, the moving parts and the hot paths.
 3. Select the content (see [Content](#content)). For each new file, find the deleted code that it replaces. Show only the parts that are new or changed. Write the shortened old and new code for each diff.

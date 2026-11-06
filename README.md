@@ -1,18 +1,27 @@
 # Skills
 
-Claude Code plugins with my skills.
+Agent skills that I made.
 
-| Plugin | What it does |
+| Skill | What it does |
 | --- | --- |
-| [summarize-pr](plugins/summarize-pr/skills/summarize-pr/SKILL.md) | Builds a simplified overview of a pull request as a Claude Artifact, so that a reviewer can check the direction of the PR without reading all of its code. |
+| [summarize-pr](skills/summarize-pr/SKILL.md) | Builds a simplified overview of a pull request, so that a reviewer can check the direction of the PR without reading all of its code. In Claude Code, it publishes the overview as a Claude Artifact. In other agents, it opens the overview as a local HTML page. |
 
 ## Install
 
 ```
-/plugin marketplace add MeLlamoPablo/skills
-/plugin install summarize-pr@mellamopablo
+npx skills add MeLlamoPablo/skills -g
 ```
 
-To get updates automatically, open `/plugin`, go to **Marketplaces**, select `mellamopablo` and select **Enable auto-update**.
+It asks which agents to install the skills into.
+
+## Update
+
+```
+npx skills update -g
+```
+
+`summarize-pr` checks for updates each time it runs, and tells you when one is available.
+
+## Requirements
 
 `summarize-pr` needs `gh` (signed in), `jq` and Node.js. To check its charts, it also needs Chrome and `puppeteer-core`, which the skill installs the first time.
