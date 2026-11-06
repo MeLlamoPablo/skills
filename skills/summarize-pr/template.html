@@ -495,13 +495,15 @@ figure.diff.upgraded .fallback { display: none; }
 	color: var(--accent);
 }
 .tests ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; list-style: none; }
-.tests li { font-family: var(--font-mono); }
-/* The mark hangs in the list indent, in place of the bullet. */
-.tests li::before { display: inline-block; width: 18px; margin-left: -18px; }
-.tests li[data-change="added"]::before { content: "+"; color: var(--add); }
-.tests li[data-change="modified"]::before { content: "~"; color: var(--accent); }
-.tests li[data-change="removed"]::before { content: "−"; color: var(--del); }
-.tests li a, .fallback-head a {
+/* A test name is a list item, or a table cell in a freeform test table. */
+.tests [data-line] { font-family: var(--font-mono); }
+.tests td[data-line] { padding-left: 18px; }
+/* The mark hangs in the list indent or the cell padding, in place of the bullet. */
+.tests [data-line]::before { display: inline-block; width: 18px; margin-left: -18px; }
+.tests [data-line][data-change="added"]::before { content: "+"; color: var(--add); }
+.tests [data-line][data-change="modified"]::before { content: "~"; color: var(--accent); }
+.tests [data-line][data-change="removed"]::before { content: "−"; color: var(--del); }
+.tests [data-line] a, .fallback-head a {
 	color: var(--muted);
 	text-decoration: underline;
 	text-decoration-color: var(--rule);
@@ -513,7 +515,7 @@ figure.diff.upgraded .fallback { display: none; }
 	color: var(--muted);
 	text-decoration: none;
 }
-.tests li a:hover, .fallback-head a:hover, .diff-link:hover { color: var(--accent); text-decoration-color: currentColor; }
+.tests [data-line] a:hover, .fallback-head a:hover, .diff-link:hover { color: var(--accent); text-decoration-color: currentColor; }
 
 /* GitHub review threads. The script shows a copy of each thread under its code line, so the original stays hidden. */
 figure.diff > .thread { display: none; }
@@ -837,7 +839,7 @@ for (const group of document.querySelectorAll(".tests [data-path]")) {
 	const heading = document.createElement("h3")
 	heading.textContent = group.dataset.path.split("/").pop()
 	group.prepend(heading)
-	for (const item of group.querySelectorAll("li[data-line]")) {
+	for (const item of group.querySelectorAll("[data-line]")) {
 		const { change, line, renamedFrom } = item.dataset
 		item.title = renamedFrom ? "Renamed test" : TEST_CHANGE_TITLES[change]
 		// A removed test has its line at the merge base.
@@ -847,7 +849,7 @@ for (const group of document.querySelectorAll(".tests [data-path]")) {
 }
 
 // A removed test name counts as a shown deletion, and the other test names as shown additions.
-for (const item of document.querySelectorAll(".tests li")) {
+for (const item of document.querySelectorAll(".tests [data-line]")) {
 	if (item.dataset.change === "removed") shownDeletions++
 	else shownAdditions++
 }

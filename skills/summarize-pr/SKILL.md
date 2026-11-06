@@ -14,6 +14,8 @@ The rules have two parts:
 - **Content** is subjective. You decide what to show and how to say it.
 - **Form** is objective. Do not deviate from it. `template.html` and `scripts/check.mjs` already hold most of it, and a harness will take over the rest later.
 
+The page is HTML, not a form to fill in. The template gives the blocks that most PRs need: diffs, charts, decisions and a test list. Start from them, but do not stop at them. When a block of your own (for example a table of results) shows the point of a PR better, write it (see [Freeform blocks](#freeform-blocks)).
+
 ## Steps
 
 `${CLAUDE_SKILL_DIR}` is the folder of this file. If your agent does not replace it, use that folder.
@@ -22,7 +24,7 @@ Before step 1, run `npx -y skills check`. If it says that `summarize-pr` has an 
 
 1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff), `avatars.json` (the avatars of the comment authors) and `removed-tests.txt` (the tests that the PR removes).
 2. Read `description.md`, `threads.json` and the diff. Then read the changed code at the head commit until you know the contracts, the moving parts and the hot paths.
-3. Select the content (see [Content](#content)). For each new file, find the deleted code that it replaces. Show only the parts that are new or changed. Write the shortened old and new code for each diff.
+3. Select the content (see [Content](#content)). For each new file, find the deleted code that it replaces. Show only the parts that are new or changed. Write the shortened old and new code for each diff. Then ask, for each part of the story: does a freeform block show this better than the standard block (see [Freeform blocks](#freeform-blocks))?
 4. Rewrite the code comments you show for a reader without context (with a skill that rewrites code comments, if the repo has one). Use the rewritten text only on the page. Do not edit the repo.
 5. Copy `${CLAUDE_SKILL_DIR}/template.html` to `<scratchpad>/<pr>/overview.html` and replace every `{{…}}` slot (see [Form](#form)).
 6. If the page shows review threads, run `node ${CLAUDE_SKILL_DIR}/scripts/avatars.mjs <page>`. Run it again after you add or remove a comment. Then run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs <page>`. Fix every error, then run it again.
@@ -50,6 +52,18 @@ The page tells one story, in this order. Leave out the steps that the PR does no
 4. **Contract:** the types and signatures between the moving parts.
 5. **One section per system part,** in the order the data moves (producer before consumer). Name each section after the system part, not after a file.
 6. **Tests:** how the automated tests verify the change.
+
+### Freeform blocks
+
+A freeform block is HTML that the template does not have, for example a table or a matrix. Write one when it shows the point of the PR better than the standard blocks: the reader then sees the pattern at once, and does not have to collect it from many diffs or list items.
+
+- Look for a shape of the PR that the standard blocks hide or spread out. Examples:
+  - The PR runs the same tests in more than one mode, configuration or environment. One table, with a row for each test, a column for each mode and pass or fail in each cell, shows which tests pass where. It replaces the test list.
+  - The PR changes the result of a function for many inputs, or the behavior of many call sites. A table shows each input or call site with its old and its new result.
+  - The PR changes a cost on a hot path. A small table shows the old and the new cost.
+- A freeform block replaces the standard block that shows the same thing. Do not show the same thing two times.
+- Do not write a freeform block that only decorates, or that shows what a diff, a chart or one sentence shows as well.
+- All the other rules apply to a freeform block: the story order, the words, the budget (each test name in it counts as a shown line) and the look of the page (see [Form](#freeform-blocks-1)).
 
 ### Use the author's words
 
@@ -148,6 +162,7 @@ A decision is a choice that shapes the PR, and that a reviewer can want done dif
 - Show a modified test only when the behavior that it tests changes. Leave it out when the PR changes only how the test runs (its setup, inputs, helpers, or an expected value that follows from the new code, such as a new hash), and the test still checks the same behavior.
 - ✓ Write each test name in words, as close as possible to its code name. Do not write a new name in your words. Remove the `Test` prefix, split the name into words, use lowercase (keep acronyms such as AWS), write out abbreviations (`Cmd` → "command"), and put a subtest after a colon: `TestUpsertAliasPreservesExistingDescription` → "Upsert alias preserves existing description", `TestPreviewOrchestration/build once for both` → "Preview orchestration: build once for both". A name that is already in words (for example a Jest `it("…")` name) stays as it is.
 - Do not show test code.
+- When the tests run in more than one mode, show them in a table with a column for each mode (see [Freeform blocks](#freeform-blocks)). In such a table, one row can stand for a group of tests with the same result (for example the cases of parameterized tests), when their names do not help the reviewer. That row has no test name, so it cannot stand for a test in `removed-tests.txt`.
 
 ### Charts
 
@@ -197,7 +212,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 ### Page
 
-- ✓ The page is a copy of `template.html`. Fill only the `{{…}}` slots and the content between them. Do not change the `<style>` block or the module script.
+- ✓ The page is a copy of `template.html`. Fill only the `{{…}}` slots and the content between them. Do not change the `<style>` block or the module script. Freeform blocks (see [Freeform blocks](#freeform-blocks-1)) are the only HTML that the template does not have.
 - ✓ No `{{…}}` slot is left in the page.
 - The page is one private Claude Artifact. `<title>` and `<h1>` are the PR title, exactly as on GitHub.
 - ✓ `<main>` has `data-repo-url` (`https://github.com/<owner>/<repo>`), `data-pr` (the number) and `data-head-sha` (the full SHA of the head commit). The template makes all GitHub links from these values.
@@ -317,7 +332,15 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 ### Tests
 
 - Tests are `<div class="tests">` with one `<div data-path="<test file>">` for each file, containing `<ul><li data-line="<n>" data-change="added">plain test name</li></ul>`. ✓ `data-line` is the line of the test in the head commit. For a removed test, `data-path` and `data-line` are its path and line at the merge base, as in `removed-tests.txt`. ✓ `data-change` is `added`, `modified` or `removed`. ✓ A renamed test (see [Content](#tests)) is `modified` and has `data-renamed-from="<path>:<line>"` from its line in `removed-tests.txt`. A test that replaces several removed tests lists all of them, with a space between them. The template adds the file heading and the links, and puts a green `+` (added), an orange `~` (modified) or a red `−` (removed) in place of the bullet, with a tooltip that says which.
+- A test table (see [Content](#tests)) is a `<table>` in place of the `<ul>`, in the same `<div data-path>`. Put each test name in its own `<td data-line="<n>" data-change="…">`, with the same attributes as the `<li>` and only the name in it. The template then gives the cell the same link and change mark as a list item, and ✓ the check counts it in the same way. The other cells and rows are yours.
 - The section heading is "Tests", with no other label.
+
+### Freeform blocks
+
+- Write plain HTML at the place of the block in the story. Use the template's elements where they fit: `<table>` (in `<div class="table-wrap">` when it can be wider than a phone), `<code>`, `<dfn class="term">` and links.
+- When the block needs its own CSS, put one `<style>` element right before the block. Start each selector with a class of the block (`.mode-results td`). Use only the template's color variables (`--ink`, `--muted`, `--rule`, `--accent`, `--accent-soft`, `--add`, `--del`, `--fb-add-bg`, `--fb-del-bg`, `--code-bg`), so that dark mode works, and only the sizes of [Sizes](#sizes).
+- Do not change the template's `<style>` block or module script, and add no scripts. The template runs no code for a freeform block, except for the test names of a test table.
+- Do not show a state only with color. Also write a word or a symbol (for example ✓ and ✗), with a `title` that says it in words.
 
 ### Links
 

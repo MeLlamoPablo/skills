@@ -229,8 +229,9 @@ if (existsSync(threadsPath)) {
 	}
 }
 
-const testNames = [...html.matchAll(/<li data-line="([^"]*)"([^>]*)>([\s\S]*?)<\/li>/g)]
-for (const [, line, attributes, name] of testNames) {
+// A test name is a list item, or a table cell in a freeform test table.
+const testNames = [...html.matchAll(/<(li|td) data-line="([^"]*)"([^>]*)>([\s\S]*?)<\/\1>/g)]
+for (const [, , line, attributes, name] of testNames) {
 	if (!/^\d+$/.test(line)) errors.push(`A test name has data-line="${line}". It must be a line number.`)
 	const change = attribute(attributes, "data-change")
 	if (!["added", "modified", "removed"].includes(change)) {
@@ -245,7 +246,7 @@ for (const [, line, attributes, name] of testNames) {
 	}
 }
 // A removed test name counts as a shown deletion, and the other test names as shown additions.
-const removedTestCount = testNames.filter(([, , attributes]) => attribute(attributes, "data-change") === "removed").length
+const removedTestCount = testNames.filter(([, , , attributes]) => attribute(attributes, "data-change") === "removed").length
 shownAdditions += testNames.length - removedTestCount
 shownDeletions += removedTestCount
 
@@ -256,8 +257,8 @@ const removedTestsPath = join(dirname(pagePath), "removed-tests.txt")
 if (existsSync(removedTestsPath)) {
 	const shownAsRemoved = new Set()
 	const shownAsRenamed = new Set()
-	for (const [, path, list] of html.matchAll(/<div data-path="([^"]*)">\s*<ul>([\s\S]*?)<\/ul>/g)) {
-		for (const [, line, attributes] of list.matchAll(/<li data-line="([^"]*)"([^>]*)>/g)) {
+	for (const [, path, , list] of html.matchAll(/<div data-path="([^"]*)">\s*<(ul|table)\b[^>]*>([\s\S]*?)<\/\2>/g)) {
+		for (const [, line, attributes] of list.matchAll(/<(?:li|td) data-line="([^"]*)"([^>]*)>/g)) {
 			if (attribute(attributes, "data-change") === "removed") shownAsRemoved.add(`${path}:${line}`)
 			for (const where of attribute(attributes, "data-renamed-from")?.split(/\s+/).filter(Boolean) ?? []) {
 				shownAsRenamed.add(where)
