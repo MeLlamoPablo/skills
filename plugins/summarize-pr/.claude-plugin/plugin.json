@@ -1,0 +1,4 @@
+{
+	"name": "summarize-pr",
+	"description": "Builds a simplified overview of a pull request as a Claude Artifact, so that a reviewer can check the direction of the PR without reading all of its code."
+}
