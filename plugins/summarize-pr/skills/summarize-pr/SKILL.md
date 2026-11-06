@@ -2,6 +2,7 @@
 name: summarize-pr
 description: Builds a simplified overview of a pull request as a Claude Artifact, so that a human can check the high-level direction of the PR without reading all of its code. Use when asked to summarize a PR, make a simplified PR overview, or when invoked as /summarize-pr.
 argument-hint: "[PR number, URL or branch; default: the PR of the current branch]"
+disable-model-invocation: true
 ---
 
 # Summarize PR
