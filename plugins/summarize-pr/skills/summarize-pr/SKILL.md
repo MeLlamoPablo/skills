@@ -16,7 +16,7 @@ The rules have two parts:
 
 ## Steps
 
-1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff) and `avatars.json` (the avatars of the comment authors).
+1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff), `avatars.json` (the avatars of the comment authors) and `removed-tests.txt` (the tests that the PR removes).
 2. Read `description.md`, `threads.json` and the diff. Then read the changed code at the head commit until you know the contracts, the moving parts and the hot paths.
 3. Select the content (see [Content](#content)). For each new file, find the deleted code that it replaces. Show only the parts that are new or changed. Write the shortened old and new code for each diff.
 4. Rewrite the code comments you show for a reader without context (with a skill that rewrites code comments, if the repo has one). Use the rewritten text only on the page. Do not edit the repo.
@@ -138,7 +138,8 @@ A decision is a choice that shapes the PR, and that a reviewer can want done dif
 ### Tests
 
 - Show only tests that state a non-obvious property of the system, grouped by file.
-- ✓ Mark each test as added or modified. A test is added when its name (with its subtest name) is new in the PR. Else it is modified.
+- ✓ Mark each test as added, modified or removed. A test is added when its name (with its subtest name) is new in the PR, and removed when the PR deletes its name. Else it is modified.
+- ✓ Show each test in `removed-tests.txt`, also when its removal looks like a mistake: a removed test changes what the tests verify, and the reviewer must agree with it. The one exception is a test that a test with a new name replaces, and that checks the same behavior (a rename, also into another file). Then show the new name instead, as modified, with `data-renamed-from` (see [Form](#tests-1)).
 - Show a modified test only when the behavior that it tests changes. Leave it out when the PR changes only how the test runs (its setup, inputs, helpers, or an expected value that follows from the new code, such as a new hash), and the test still checks the same behavior.
 - ✓ Write each test name in words, as close as possible to its code name. Do not write a new name in your words. Remove the `Test` prefix, split the name into words, use lowercase (keep acronyms such as AWS), write out abbreviations (`Cmd` → "command"), and put a subtest after a colon: `TestUpsertAliasPreservesExistingDescription` → "Upsert alias preserves existing description", `TestPreviewOrchestration/build once for both` → "Preview orchestration: build once for both". A name that is already in words (for example a Jest `it("…")` name) stays as it is.
 - Do not show test code.
@@ -200,7 +201,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 - ✓ No eyebrows (small labels above headings) anywhere on the page.
 - No "Pull request" label, branch name, file count, budget meter or budget text.
-- ✓ `.stats` has `data-pr-additions` and `data-pr-deletions` from `pr.json`. The template shows `+shown (PR additions, faint) −shown (PR deletions, faint)`, and test names count as shown additions.
+- ✓ `.stats` has `data-pr-additions` and `data-pr-deletions` from `pr.json`. The template shows `+shown (PR additions, faint) −shown (PR deletions, faint)`, and test names count as shown additions (removed tests as shown deletions).
 - The template puts a link to the PR (`<repo>#<number> ↗`, outlined in the accent color) at the top right of the header, with the `<h1>` flowing around it. In a narrow header, the link goes below the `<h1>`. Do not add another PR link.
 - One `.chip` for each experiment or flag that gates the change: `experiment: <name>`.
 - Author text:
@@ -310,7 +311,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 ### Tests
 
-- Tests are `<div class="tests">` with one `<div data-path="<test file>">` for each file, containing `<ul><li data-line="<n>" data-change="added">plain test name</li></ul>`. ✓ `data-line` is the line of the test in the head commit. ✓ `data-change` is `added` or `modified`. The template adds the file heading and the links, and puts a green `+` (added) or an orange `~` (modified) in place of the bullet, with a tooltip that says which.
+- Tests are `<div class="tests">` with one `<div data-path="<test file>">` for each file, containing `<ul><li data-line="<n>" data-change="added">plain test name</li></ul>`. ✓ `data-line` is the line of the test in the head commit. For a removed test, `data-path` and `data-line` are its path and line at the merge base, as in `removed-tests.txt`. ✓ `data-change` is `added`, `modified` or `removed`. ✓ A renamed test (see [Content](#tests)) is `modified` and has `data-renamed-from="<path>:<line>"` from its line in `removed-tests.txt`. The template adds the file heading and the links, and puts a green `+` (added), an orange `~` (modified) or a red `−` (removed) in place of the bullet, with a tooltip that says which.
 - The section heading is "Tests", with no other label.
 
 ### Links

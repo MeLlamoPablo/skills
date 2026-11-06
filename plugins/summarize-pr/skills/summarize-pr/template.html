@@ -500,6 +500,7 @@ figure.diff.upgraded .fallback { display: none; }
 .tests li::before { display: inline-block; width: 18px; margin-left: -18px; }
 .tests li[data-change="added"]::before { content: "+"; color: var(--add); }
 .tests li[data-change="modified"]::before { content: "~"; color: var(--accent); }
+.tests li[data-change="removed"]::before { content: "−"; color: var(--del); }
 .tests li a, .fallback-head a {
 	color: var(--muted);
 	text-decoration: underline;
@@ -667,7 +668,7 @@ digraph {
 		<div class="tests">
 			<div data-path="{{test file path}}">
 				<ul>
-					<li data-line="{{line}}" data-change="{{added or modified}}">{{test name}}</li>
+					<li data-line="{{line}}" data-change="{{added, modified or removed}}">{{test name}}</li>
 				</ul>
 			</div>
 		</div>
@@ -774,12 +775,13 @@ for (const comment of document.querySelectorAll("figure.diff > .thread > .commen
 }
 
 // GitHub names the anchor of a file in the "Files changed" tab after the SHA-256 of its path.
-// `R<line>` after it anchors a line of the head commit (the right side of the diff).
-async function prFileUrl(path, line) {
+// `R<line>` after it anchors a line of the head commit (the right side of the diff), and `L<line>` a line of the
+// merge base (the left side).
+async function prFileUrl(path, line, side = "R") {
 	try {
 		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(path))
 		const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("")
-		return `${prFilesUrl}#diff-${hex}${line ? `R${line}` : ""}`
+		return `${prFilesUrl}#diff-${hex}${line ? `${side}${line}` : ""}`
 	} catch {
 		// crypto.subtle exists only in secure contexts.
 		return prFilesUrl
@@ -830,18 +832,25 @@ figures.forEach((figure, index) => {
 	figure.append(fallback, viewer)
 })
 
+const TEST_CHANGE_TITLES = { added: "Added test", modified: "Modified test", removed: "Removed test" }
 for (const group of document.querySelectorAll(".tests [data-path]")) {
 	const heading = document.createElement("h3")
 	heading.textContent = group.dataset.path.split("/").pop()
 	group.prepend(heading)
 	for (const item of group.querySelectorAll("li[data-line]")) {
-		item.title = item.dataset.change === "added" ? "Added test" : "Modified test"
-		item.replaceChildren(githubLink(await prFileUrl(group.dataset.path, item.dataset.line), item.textContent))
+		const { change, line, renamedFrom } = item.dataset
+		item.title = renamedFrom ? "Renamed test" : TEST_CHANGE_TITLES[change]
+		// A removed test has its line at the merge base.
+		const url = await prFileUrl(group.dataset.path, line, change === "removed" ? "L" : "R")
+		item.replaceChildren(githubLink(url, item.textContent))
 	}
 }
 
-// Test names count as shown additions.
-shownAdditions += document.querySelectorAll(".tests li").length
+// A removed test name counts as a shown deletion, and the other test names as shown additions.
+for (const item of document.querySelectorAll(".tests li")) {
+	if (item.dataset.change === "removed") shownDeletions++
+	else shownAdditions++
+}
 
 const stats = document.querySelector(".stats")
 const numberFormat = new Intl.NumberFormat("en-US")

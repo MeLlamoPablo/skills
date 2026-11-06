@@ -67,6 +67,10 @@ fi
 jq -r '"Review threads: \(length). Open, started by humans, on the current diff (the page must show these): \(map(select(.startedByHuman and (.isOutdated | not) and (.isResolved | not))) | length)"' "$out/threads.json"
 jq -r '.[] | select(.startedByHuman and (.isOutdated | not) and (.isResolved | not)) | "  \(.path):\(.line) by \(.comments[0].author) \(.comments[0].url)"' "$out/threads.json"
 
+node "$(dirname "$0")/removed-tests.mjs" "$out/full.diff" > "$out/removed-tests.txt"
+echo "Tests that the PR removes (the page must show these, or the tests that replace them): $(wc -l < "$out/removed-tests.txt" | tr -d ' ')"
+sed 's/^/  /' "$out/removed-tests.txt"
+
 # A merged PR that this PR was stacked on is in the base branch now, so the page mentions it only as history.
 echo "PRs that the description links to:"
 {

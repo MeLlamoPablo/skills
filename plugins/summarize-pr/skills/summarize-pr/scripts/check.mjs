@@ -232,15 +232,54 @@ if (existsSync(threadsPath)) {
 const testNames = [...html.matchAll(/<li data-line="([^"]*)"([^>]*)>([\s\S]*?)<\/li>/g)]
 for (const [, line, attributes, name] of testNames) {
 	if (!/^\d+$/.test(line)) errors.push(`A test name has data-line="${line}". It must be a line number.`)
-	if (!["added", "modified"].includes(attribute(attributes, "data-change"))) {
-		errors.push(`The test name "${name.trim()}" needs data-change="added" or data-change="modified".`)
+	const change = attribute(attributes, "data-change")
+	if (!["added", "modified", "removed"].includes(change)) {
+		errors.push(`The test name "${name.trim()}" needs data-change="added", "modified" or "removed".`)
+	}
+	if (attribute(attributes, "data-renamed-from") && change !== "modified") {
+		errors.push(`The test name "${name.trim()}" has data-renamed-from, so it needs data-change="modified".`)
 	}
 	// A code name such as "TestUpsertAlias" or "TestOrchestration/build once" has no space or starts with "Test".
 	if (!/\s/.test(name.trim()) || /\bTest[A-Z]/.test(name)) {
 		errors.push(`The test name "${name.trim()}" is a code name. Write it as a plain sentence.`)
 	}
 }
-shownAdditions += testNames.length
+// A removed test name counts as a shown deletion, and the other test names as shown additions.
+const removedTestCount = testNames.filter(([, , attributes]) => attribute(attributes, "data-change") === "removed").length
+shownAdditions += testNames.length - removedTestCount
+shownDeletions += removedTestCount
+
+// gather.sh writes removed-tests.txt next to the page. The page shows each removed test as removed, or the test that
+// replaces it under a new name with data-renamed-from.
+const removedTestsPath = join(dirname(pagePath), "removed-tests.txt")
+if (existsSync(removedTestsPath)) {
+	const shownAsRemoved = new Set()
+	const shownAsRenamed = new Set()
+	for (const [, path, list] of html.matchAll(/<div data-path="([^"]*)">\s*<ul>([\s\S]*?)<\/ul>/g)) {
+		for (const [, line, attributes] of list.matchAll(/<li data-line="([^"]*)"([^>]*)>/g)) {
+			if (attribute(attributes, "data-change") === "removed") shownAsRemoved.add(`${path}:${line}`)
+			const renamedFrom = attribute(attributes, "data-renamed-from")
+			if (renamedFrom) shownAsRenamed.add(renamedFrom)
+		}
+	}
+	const removedTests = new Set()
+	for (const entry of readFileSync(removedTestsPath, "utf8").split("\n").filter(Boolean)) {
+		const [path, line, name] = entry.split("\t")
+		const where = `${path}:${line}`
+		removedTests.add(where)
+		if (!shownAsRemoved.has(where) && !shownAsRenamed.has(where)) {
+			errors.push(
+				`The PR removes the test "${name}" (${where} at the merge base). Show it with data-change="removed", ` +
+					`or show the test that replaces it with data-renamed-from="${where}".`,
+			)
+		}
+	}
+	for (const where of [...shownAsRemoved, ...shownAsRenamed]) {
+		if (!removedTests.has(where)) {
+			errors.push(`The page shows a removed or renamed test from ${where}, but removed-tests.txt does not list it.`)
+		}
+	}
+}
 
 if (/<pre class="mermaid"/.test(html)) errors.push('A chart uses Mermaid. Write it as <script type="text/plain" class="dot">.')
 const CHART = /<div class="chart"([^>]*)>\s*<script type="text\/plain" class="dot">([\s\S]*?)<\/script>/g
