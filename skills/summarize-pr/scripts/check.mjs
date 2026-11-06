@@ -250,7 +250,8 @@ shownAdditions += testNames.length - removedTestCount
 shownDeletions += removedTestCount
 
 // gather.sh writes removed-tests.txt next to the page. The page shows each removed test as removed, or the test that
-// replaces it under a new name with data-renamed-from.
+// replaces it under a new name with data-renamed-from. A test that replaces several tests lists them all, with spaces
+// between them.
 const removedTestsPath = join(dirname(pagePath), "removed-tests.txt")
 if (existsSync(removedTestsPath)) {
 	const shownAsRemoved = new Set()
@@ -258,8 +259,9 @@ if (existsSync(removedTestsPath)) {
 	for (const [, path, list] of html.matchAll(/<div data-path="([^"]*)">\s*<ul>([\s\S]*?)<\/ul>/g)) {
 		for (const [, line, attributes] of list.matchAll(/<li data-line="([^"]*)"([^>]*)>/g)) {
 			if (attribute(attributes, "data-change") === "removed") shownAsRemoved.add(`${path}:${line}`)
-			const renamedFrom = attribute(attributes, "data-renamed-from")
-			if (renamedFrom) shownAsRenamed.add(renamedFrom)
+			for (const where of attribute(attributes, "data-renamed-from")?.split(/\s+/).filter(Boolean) ?? []) {
+				shownAsRenamed.add(where)
+			}
 		}
 	}
 	const removedTests = new Set()
