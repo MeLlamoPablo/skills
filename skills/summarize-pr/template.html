@@ -547,7 +547,20 @@ figure.diff > .thread { display: none; }
 }
 .comment { display: grid; gap: 2px; }
 .comment + .comment { padding-top: 10px; border-top: 1px solid var(--rule); }
-.comment p, .comment ul { margin: 0; }
+.comment :is(p, ul, ol, pre, blockquote) { margin: 0; }
+/* The blocks of GitHub Markdown, which the script renders. */
+.comment blockquote {
+	padding-left: 12px;
+	border-left: 3px solid var(--rule);
+	color: var(--muted);
+}
+.comment pre {
+	overflow-x: auto;
+	padding: 8px 12px;
+	border-radius: 6px;
+	background: var(--code-bg);
+}
+.comment pre code { padding: 0; background: none; }
 .comment a { color: inherit; text-underline-offset: 3px; }
 .comment .comment-author {
 	justify-self: start;
@@ -773,7 +786,70 @@ function readThreads(figure) {
 // avatars.mjs writes this block, because the artifact host blocks external images.
 const avatars = JSON.parse(document.getElementById("avatars")?.textContent ?? "{}")
 
-for (const comment of document.querySelectorAll("figure.diff > .thread > .comment")) {
+const escapeHtml = text => text.replace(/[&<>"]/g, character => `&#${character.charCodeAt(0)};`)
+
+// GitHub links `#123` to that pull request or issue, and `@login` to that user.
+const githubReference = {
+	name: "githubReference",
+	level: "inline",
+	start: source => source.match(/(?<![\w/#@])[#@]\w/)?.index,
+	tokenizer(source) {
+		if (this.lexer.state.inLink) return
+		const match = /^(?:#(\d+)|@([a-z\d](?:[a-z\d-]*[a-z\d])?))(?![\w-])/i.exec(source)
+		if (!match) return
+		const href = match[1] ? `${repoUrl}/issues/${match[1]}` : `https://github.com/${match[2]}`
+		return { type: "githubReference", raw: match[0], href }
+	},
+	renderer: ({ raw, href }) => `<a href="${href}">${raw}</a>`,
+}
+
+async function loadMarkdown() {
+	try {
+		const { Marked } = await import("https://cdn.jsdelivr.net/npm/marked@15.0.12/+esm")
+		return new Marked({
+			gfm: true,
+			// As in GitHub comments, a line break in the Markdown is a line break on the page.
+			breaks: true,
+			renderer: {
+				// GitHub removes most HTML from comments. The page shows it as text, so a comment runs no script.
+				html: ({ text }) => escapeHtml(text),
+				// The page has its own heading sizes.
+				heading({ tokens }) {
+					return `<p><strong>${this.parser.parseInline(tokens)}</strong></p>`
+				},
+				// The artifact host blocks external images.
+				image: ({ href, text }) => `<a href="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`,
+			},
+			extensions: [githubReference],
+		})
+	} catch (error) {
+		console.warn("The Markdown renderer did not load. Comments show as plain text.", error)
+		return null
+	}
+}
+
+function renderMarkdown(markdown, source) {
+	const blocks = document.createElement("template")
+	if (markdown) {
+		blocks.innerHTML = markdown.parse(source)
+	} else {
+		for (const paragraph of source.split(/\n\s*\n/)) {
+			blocks.content.append(Object.assign(document.createElement("p"), { textContent: paragraph }))
+		}
+	}
+	for (const link of blocks.content.querySelectorAll("a")) {
+		link.target = "_blank"
+		link.rel = "noopener"
+	}
+	return blocks.content
+}
+
+// The diff viewer shows copies of the threads, so the comments are complete before it loads.
+const comments = [...document.querySelectorAll("figure.diff > .thread > .comment")]
+const markdown = comments.length > 0 ? await loadMarkdown() : null
+for (const comment of comments) {
+	const source = comment.querySelector(':scope > script[type="text/markdown"]')
+	source.replaceWith(renderMarkdown(markdown, source.textContent.trim()))
 	const author = githubLink(comment.dataset.href, `${comment.dataset.author} ↗`)
 	author.className = "comment-author"
 	const avatar = avatars[comment.dataset.author]

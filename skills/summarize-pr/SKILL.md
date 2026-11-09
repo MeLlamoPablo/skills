@@ -307,12 +307,14 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 - ✓ Each thread is in the `figure.diff` of its code, after the scripts:
   ```html
   <div class="thread" data-side="new" data-line="6">
-  	<div class="comment" data-author="<login>" data-href="<comment URL>"><p>…</p></div>
+  	<div class="comment" data-author="<login>" data-href="<comment URL>"><script type="text/markdown">
+  <the comment Markdown, at column 0>
+  </script></div>
   </div>
   ```
   One `.comment` for each comment that you show, in thread order. Take `data-author` and `data-href` from `threads.json`.
 - ✓ `data-side` is `old` or `new` (the `side` in `threads.json`). ✓ `data-line` is a line of the shown code on that side, counted from 1 in the shortened code, not in the file. Use the last line of the thread's range, as GitHub does.
-- Convert the comment Markdown to HTML with the same rules as the [Header](#header) author text.
+- ✓ Keep each comment in GitHub Markdown, as `body` in `threads.json` has it, with the edits that [Review threads](#review-threads) allows. Start its lines at column 0, because Markdown reads an indented line as code. The template renders it as GitHub does: quotes, lists, code blocks, links, and `#123` and `@login` references. It shows raw HTML as text, so cut HTML from the comment (for example a `<details>` block or a badge).
 - The template shows the thread under its line (in the diff viewer and in the plain diff), and the author name links to the comment on GitHub.
 - The template shows each author's GitHub avatar from the `#avatars` JSON block. The artifact host blocks external images, so `avatars.mjs` writes this block with the avatars as data URIs. Do not write or change it by hand. ✓ The check warns when a comment author has no avatar.
 

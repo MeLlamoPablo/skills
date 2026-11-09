@@ -192,10 +192,18 @@ for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([
 	}
 }
 
-for (const [, attributes] of html.matchAll(/<div class="comment"([^>]*)>/g)) {
+// The template renders the Markdown of each comment. Markdown reads an indented line as code.
+for (const [, attributes, markdown] of html.matchAll(
+	/<div class="comment"([^>]*)>(<script type="text\/markdown">\n(?![ \t\n]))?/g,
+)) {
 	if (!attribute(attributes, "data-author")) errors.push("A comment has no data-author.")
 	if (!/^https:\/\/github\.com\/\S+#discussion_r\d+$/.test(attribute(attributes, "data-href") ?? "")) {
 		errors.push(`A comment has data-href="${attribute(attributes, "data-href")}", not the URL of a GitHub review comment.`)
+	}
+	if (!markdown) {
+		errors.push(
+			`The comment ${attribute(attributes, "data-href")} does not start with <script type="text/markdown">, a line break and its Markdown at column 0.`,
+		)
 	}
 }
 const avatarsJson = html.match(/<script type="application\/json" id="avatars">([\s\S]*?)<\/script>/)?.[1]
