@@ -55,6 +55,13 @@ done < <(jq -r '[.[].comments[] | select(.avatarUrl != null) | [.author, .avatar
 rm -f "$out/avatar.tmp"
 printf '%s\n' "$avatars" > "$out/avatars.json"
 
+# FramerStudio's deploy workflow keeps the preview links of a PR in one comment that it updates on each push:
+# https://github.com/framer/FramerStudio/blob/master/tools/ci/deploy-comment.sh
+# The page links only the production preview. In other repos, the file stays empty.
+gh api --paginate --slurp "repos/${repo% *}/${repo#* }/issues/$number/comments?per_page=100" | jq -r '
+	[.[][] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- PR_PREVIEW_TAG -->")))]
+	| first.body // "" | capture("\\[production preview\\]\\((?<url>[^)]+)\\)").url' > "$out/preview-url.txt"
+
 head_sha=$(jq -r .headRefOid "$out/pr.json")
 jq -r '"PR #\(.number): \(.title)\n\(.url)\n\(.headRefName) → \(.baseRefName), head \(.headRefOid)\n+\(.additions) −\(.deletions) in \(.changedFiles) files"' "$out/pr.json"
 author=$(jq -r .author.login "$out/pr.json")
@@ -64,6 +71,7 @@ if [ "$author" = "$(gh api user --jq .login)" ]; then
 else
 	echo "Author: $author"
 fi
+echo "Production preview (the sidebar links it): $(grep . "$out/preview-url.txt" || echo none)"
 jq -r '"Review threads: \(length). Open, started by humans, on the current diff (the page must show these): \(map(select(.startedByHuman and (.isOutdated | not) and (.isResolved | not))) | length)"' "$out/threads.json"
 jq -r '.[] | select(.startedByHuman and (.isOutdated | not) and (.isResolved | not)) | "  \(.path):\(.line) by \(.comments[0].author) \(.comments[0].url)"' "$out/threads.json"
 

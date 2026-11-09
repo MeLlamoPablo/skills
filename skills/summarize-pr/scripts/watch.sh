@@ -14,14 +14,15 @@ live="$out/.live"
 # do not count.
 fingerprint() {
 	jq -n --slurpfile pr "$1/pr.json" --slurpfile threads "$1/threads.json" --rawfile linked "$1/linked-prs.txt" \
-		--rawfile description "$1/description.md" '{
+		--rawfile description "$1/description.md" --rawfile preview "$1/preview-url.txt" '{
 		"head commit": $pr[0].headRefOid,
 		"base branch": $pr[0].baseRefName,
 		title: $pr[0].title,
 		description: $description,
 		"review threads": [$threads[0][] | select(.comments[0].author | endswith("[bot]") | not)
 			| {path, line, isResolved, isOutdated, comments: [.comments[].url]}],
-		"linked PRs": $linked
+		"linked PRs": $linked,
+		"preview link": $preview
 	}'
 }
 

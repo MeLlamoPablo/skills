@@ -22,7 +22,7 @@ The page is HTML, not a form to fill in. The template gives the blocks that most
 
 Before step 1, run `npx -y skills check`. If it says that `summarize-pr` has an update, tell the user that `npx skills update summarize-pr -g` installs it. Then continue with this version, also when the command fails.
 
-1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff), `avatars.json` (the avatars of the comment authors) and `removed-tests.txt` (the tests that the PR removes).
+1. Collect the PR facts: `bash ${CLAUDE_SKILL_DIR}/scripts/gather.sh <scratchpad>/<pr> [<pr>]`. Run it from the repo of the PR. It writes `pr.json`, `description.md`, `files.tsv`, `full.diff`, `threads.json` (the review threads on the diff), `avatars.json` (the avatars of the comment authors), `removed-tests.txt` (the tests that the PR removes) and `preview-url.txt` (the production preview of a FramerStudio PR, else empty).
 2. Read `description.md`, `threads.json` and the diff. Then read the changed code at the head commit until you know the contracts, the moving parts and the hot paths.
 3. Select the content (see [Content](#content)). For each new file, find the deleted code that it replaces. Show only the parts that are new or changed. Write the shortened old and new code for each diff. Then ask, for each part of the story: does a freeform block show this better than the standard block (see [Freeform blocks](#freeform-blocks))?
 4. Rewrite the code comments you show for a reader without context (with a skill that rewrites code comments, if the repo has one). Use the rewritten text only on the page. Do not edit the repo.
@@ -271,11 +271,12 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 ### Sidebar
 
 - ✓ The sidebar index has one link per `<section id>`, in page order.
-- The template gives the rest: a sticky 12px index on the left with the current section marked, and the Split/Unified diff layout control below it. Split is the default, and the page keeps each viewer's choice. Below 860px, the index is a row above the content.
+- ✓ When `preview-url.txt` has a URL, put it in the `.preview-link` slot (write `&` as `&amp;`). When it is empty, remove the `.preview-link` element. Link only the production preview, never the development preview or the commit preview.
+- The template gives the rest: a sticky 12px index on the left with the current section marked, the Split/Unified diff layout control below it, and the preview link below that. Split is the default, and the page keeps each viewer's choice. Below 860px, the index is a row above the content.
 
 ### Sizes
 
-- All text is 16px. Only the sidebar index and the small labels (Note, Discarded idea, Decision, Implicit, Trade-off, Assumption, table headers, the layout control, the ↗ link, the comment author, the term name in a tooltip) are 12px. h1 is 28–40px and h2 is 22px. Do not add other sizes.
+- All text is 16px. Only the sidebar index and the small labels (Note, Discarded idea, Decision, Implicit, Trade-off, Assumption, table headers, the layout control, the ↗ link, the preview link, the comment author, the term name in a tooltip) are 12px. h1 is 28–40px and h2 is 22px. Do not add other sizes.
 - Inline `<code>` has a gray background. Test names are muted until hovered. The template does both.
 - The text (lede, notes, callouts, discarded ideas and test names) ends where the first `<h1>` line ends, so it leaves the same space for the PR link. Charts and diffs use the wider column. In a narrow header, the link goes below the `<h1>` and the text uses the full width. The template does this.
 
@@ -345,6 +346,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 ### Links
 
 - The PR link in the header opens the PR's conversation.
+- The preview link in the sidebar opens the production preview deploy of the PR.
 - Diffs link to the PR's "Files changed" tab, so they always show the latest code. Test names link to their line in that tab.
 - Comment authors link to their comments on GitHub.
 - Chart boxes link to permalinks at `data-head-sha`, with line numbers from that commit. When the PR gets new commits, update `data-head-sha`, the line numbers of chart boxes and tests, and `.stats`.

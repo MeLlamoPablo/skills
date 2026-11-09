@@ -386,6 +386,17 @@ main { container: main / inline-size; }
 .view-toggle button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
 .view-toggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .sidebar nav a:hover, .sidebar nav a:focus-visible { color: var(--accent); }
+/* It looks like the layout control above it. */
+.preview-link {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	padding: 3px 10px;
+	color: var(--muted);
+	text-decoration: none;
+	border: 1px solid var(--rule);
+	border-radius: 6px;
+}
+.preview-link:hover, .preview-link:focus-visible { color: var(--accent); background: var(--accent-soft); }
 a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
 section { display: grid; gap: 18px; scroll-margin-top: 16px; }
@@ -598,6 +609,7 @@ script[type="text/plain"] { display: none; }
 		<button type="button" data-style="split" aria-pressed="true">Split</button>
 		<button type="button" data-style="unified" aria-pressed="false">Unified</button>
 	</div>
+	<a class="preview-link" href="{{production preview URL}}" target="_blank" rel="noopener" title="Open the production preview of this pull request">Preview ↗</a>
 </aside>
 
 <main data-repo-url="https://github.com/{{owner}}/{{repo}}" data-pr="{{PR number}}" data-head-sha="{{head commit SHA}}">

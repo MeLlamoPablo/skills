@@ -365,6 +365,21 @@ if (sectionIds.join() !== navIds.join()) {
 	errors.push(`The sidebar links (${navIds.join(", ")}) must be the sections in page order (${sectionIds.join(", ")}).`)
 }
 
+// gather.sh writes preview-url.txt next to the page. It is empty when the PR has no production preview.
+const previewPath = join(dirname(pagePath), "preview-url.txt")
+if (existsSync(previewPath)) {
+	const previewUrl = readFileSync(previewPath, "utf8").trim()
+	const previewLinks = [...html.matchAll(/<a class="preview-link"([^>]*)>/g)].map(([, attributes]) =>
+		attribute(attributes, "href")?.replaceAll("&amp;", "&"),
+	)
+	if (previewUrl && previewLinks.join() !== previewUrl) {
+		errors.push(`The sidebar needs one preview link to ${previewUrl} (from preview-url.txt).`)
+	}
+	if (!previewUrl && previewLinks.length > 0) {
+		errors.push("The PR has no production preview (preview-url.txt is empty), so remove the sidebar preview link.")
+	}
+}
+
 // The budget counts only the + and − lines, as the page header does. Unchanged lines only place the change (for example
 // the enclosing config object), so they do not count.
 const prLines = prAdditions + prDeletions
