@@ -131,11 +131,12 @@ A decision is a choice that shapes the PR, and that a reviewer can want done dif
 ### Code
 
 - **Show:** signatures, types and contracts; the dependencies between moving parts; code on _very_ hot paths; some comments (a why or a TODO that the reviewer must know).
+- **Show the message of each assert or `throw` that you show,** because it tells why the state is invalid, and that is often subtle. Cut the message (`/* ... */`) only when the condition already says it, for example `assert(idsMatch, /* ... */)`.
 - **Do not show:**
   - Imports and re-exports. They are never relevant.
   - Implementation that the contract names already describe.
   - Implementation details, and comments about them.
-  - Guards on the inputs (an `assert` or an early `throw` for an unknown id), and their comments, unless the PR is about that guard.
+  - Guards on the inputs (an `assert` or an early `throw` for an unknown id), and their comments, unless the PR is about that guard. An assert that keeps a rule of the product (for example, a field that a plugin manages can’t link) is not a guard on the inputs: show it.
   - _Internal_ signatures, types and contracts. They do not leave their own system, and they are mechanical.
   - Test implementations, and helpers inside a test or an eval (for example, a function that finds a node for a check).
   - The same change in more than one place (for example, each caller passes the same new argument). Show it in one place, and put the page comment `//! Same for all other callers` (or the same words for what repeats) above it, on both sides, so that it is an unchanged row. Show another place only when its change is different, for example a store that gets the value through its constructor, or the code that wires that value into the store.
