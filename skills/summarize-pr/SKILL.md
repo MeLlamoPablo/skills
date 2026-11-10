@@ -273,7 +273,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 - ✓ The sidebar index has one link per `<section id>`, in page order.
 - ✓ When `preview-url.txt` has a URL, put it in the `.preview-link` slot (write `&` as `&amp;`). When it is empty, remove the `.preview-link` element. Link only the production preview, never the development preview or the commit preview.
-- The template gives the rest: a sticky 12px index on the left with the current section marked, the Split/Unified diff layout control below it, and the preview link below that. Split is the default, and the page keeps each viewer's choice. Below 860px, the index is a row above the content.
+- The template gives the rest: a sticky 12px index on the left with the current section marked, the Split/Unified diff layout control below it, and the preview link below that. Split is the default, and the page keeps each viewer's choice. Below 860px (for example on a phone), the index is a row above the content, the diffs are unified, and the layout control is hidden.
 
 ### Sizes
 
@@ -288,7 +288,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 ### Diffs
 
 - Each diff is `<figure class="diff" data-path="<repo path>" data-lang="<language>">` with `<script type="text/plain" class="old">` and `<script type="text/plain" class="new">`. A new file has only `new`, and a deleted file has only `old`. A diff can show only a part of a file, and one file can have more than one diff. Add `data-name` only to show a shorter name than the path, or to show a move: for a move, `data-path` is the new path and `data-name` is `<old path> → <new path>`.
-- The template renders each diff with @pierre/diffs@1.5.2: split by default, wrapped lines, no line numbers (the code is shortened), simple hunk separators, and no collapsed lines. Before the library loads, it shows a plain unified diff.
+- The template renders each diff with @pierre/diffs@1.5.2: split by default (unified below 860px), wrapped lines, no line numbers (the code is shortened), simple hunk separators, and no collapsed lines. Before the library loads, it shows a plain unified diff.
 - The diff viewer, the plain diff and the budget ignore leading and trailing whitespace, as GitHub’s “Hide whitespace” does. A line that only changes its indentation (for example, code that the PR wraps in a `try` or moves into a new function) is an unchanged row, and each side keeps its own indentation. Thus show such code with its real indentation on each side, and do not shorten it only because the PR re-indents it.
 - If a diff still shows the same line as removed and as added (code that the PR moves to another place in the shown code) and the reader cannot easily follow it, split the diff into smaller diffs, so that each one shows one change.
 - The diff header shows the path and only `↗`, which opens the file in the PR's "Files changed" tab.

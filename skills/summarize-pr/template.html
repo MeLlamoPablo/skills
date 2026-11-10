@@ -1186,6 +1186,9 @@ function currentThemeType() {
 const DIFF_STYLE_KEY = "diffStyle"
 const viewToggle = document.getElementById("view-toggle")
 const layoutButtons = [...viewToggle.querySelectorAll("button")]
+// On a phone, each side of a split diff is too narrow to read, so the diffs are unified and the control is hidden. The
+// viewer's choice stays for a wider window. This is the width where the section index goes above the content.
+const narrowScreen = matchMedia("(max-width: 860px)")
 
 function readDiffStyle() {
 	try {
@@ -1195,10 +1198,16 @@ function readDiffStyle() {
 	}
 }
 
-let diffStyle = readDiffStyle()
+let chosenDiffStyle = readDiffStyle()
+
+function currentDiffStyle() {
+	return narrowScreen.matches ? "unified" : chosenDiffStyle
+}
 
 function showDiffStyle() {
+	const diffStyle = currentDiffStyle()
 	document.documentElement.dataset.diffStyle = diffStyle
+	viewToggle.hidden = narrowScreen.matches
 	for (const button of layoutButtons) button.setAttribute("aria-pressed", String(button.dataset.style === diffStyle))
 }
 
@@ -1220,7 +1229,7 @@ try {
 		const instance = new FileDiff({
 			theme: { dark: "pierre-dark", light: "pierre-light" },
 			themeType: currentThemeType(),
-			diffStyle,
+			diffStyle: currentDiffStyle(),
 			overflow: "wrap",
 			expandUnchanged: true,
 			hunkSeparators: "simple",
@@ -1260,22 +1269,29 @@ try {
 		for (const instance of instances) instance.setThemeType(currentThemeType())
 	}).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] })
 
+	function updateDiffStyle() {
+		showDiffStyle()
+		const diffStyle = currentDiffStyle()
+		for (const instance of instances) {
+			if (instance.options.diffStyle === diffStyle) continue
+			instance.setOptions({ ...instance.options, diffStyle })
+			instance.rerender()
+		}
+	}
+
 	// The plain fallback view is unified only, so the control shows only with the diff viewer.
 	showDiffStyle()
-	viewToggle.hidden = false
 	for (const button of layoutButtons) {
 		button.addEventListener("click", () => {
-			diffStyle = button.dataset.style
+			chosenDiffStyle = button.dataset.style
 			try {
-				localStorage.setItem(DIFF_STYLE_KEY, diffStyle)
+				localStorage.setItem(DIFF_STYLE_KEY, chosenDiffStyle)
 			} catch {}
-			showDiffStyle()
-			for (const instance of instances) {
-				instance.setOptions({ ...instance.options, diffStyle })
-				instance.rerender()
-			}
+			updateDiffStyle()
 		})
 	}
+	// A window can cross the width, for example when a tablet turns.
+	narrowScreen.addEventListener("change", updateDiffStyle)
 } catch (error) {
 	console.warn("The diff viewer did not load. The page shows plain diffs.", error)
 }
