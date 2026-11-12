@@ -154,6 +154,11 @@ A decision is a choice that shapes the PR, and that a reviewer can want done dif
 - When the PR keeps a legacy path, show that the legacy branch stays (shortened). Reviewers check that old data still works.
 - When the PR removes a safety net (a try/catch, a fallback), show the removed code on the old side.
 - For generated code, the generated output (for example a snapshot) can show the contract better than the generator. Show the one that is easier to read.
+- **Prompts of AI agents:** when the PR changes what an AI agent reads (its system prompt, its instructions, or the tool or API types that the prompt includes), show the rendered text as a diff, not the code that builds it. The reviewer checks the words that the model reads, and code that joins strings, escapes values or wraps text in an experiment hides them.
+  - Get the rendered text at the base and at the head. Use the prompt snapshots of the repo when the PR updates them. Else render the prompt with the test tools of the repo (for example a temporary test that writes the prompt to your scratchpad; delete it after). When the change is behind an experiment, render it with the experiment off and on, and say that off is the same as the base when it is.
+  - Show only the changed parts, with the heading or the declaration that contains each part, shortened as other code is (`…` for a cut sentence or list). Use `data-lang="markdown"` for prose and the language of the code for types. Give each figure a `data-name` that says it is the prompt (for example `<agent> prompt: CMS instructions`), and set `data-path` and `data-line` to the source that makes that text.
+  - Wrap long prose lines at about 90 columns, at word boundaries. Split a long one-line type into one member on each line. Do not change the words.
+  - Show the code that builds the prompt only when it has logic that the reviewer must check, for example a condition that selects the text, or a generator change. Show it after the text diff. Do not show code that only adds a string.
 - If the page is over the budget, cut a full diff that repeats a pattern already on the page before you cut the lines that explain a diff.
 
 ### Tests
