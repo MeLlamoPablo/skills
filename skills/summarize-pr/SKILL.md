@@ -297,11 +297,12 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 ### Diffs
 
-- Each diff is `<figure class="diff" data-path="<repo path>" data-lang="<language>">` with `<script type="text/plain" class="old">` and `<script type="text/plain" class="new">`. A new file has only `new`, and a deleted file has only `old`. A diff can show only a part of a file, and one file can have more than one diff. Add `data-name` only to show a shorter name than the path, or to show a move: for a move, `data-path` is the new path and `data-name` is `<old path> → <new path>`.
+- Each diff is `<figure class="diff" data-path="<repo path>" data-line="<n>" data-lang="<language>">` with `<script type="text/plain" class="old">` and `<script type="text/plain" class="new">`. A new file has only `new`, and a deleted file has only `old`. A diff can show only a part of a file, and one file can have more than one diff. Add `data-name` only to show a shorter name than the path, or to show a move: for a move, `data-path` is the new path and `data-name` is `<old path> → <new path>`.
+- ✓ `data-line` is the line of the first changed line of the shown code: in the head commit, or at the merge base for a diff with only old code. Pick a line that the PR adds or changes, because the “Files changed” tab has an anchor only for a line in its diff. The header link then opens the shown code, not the top of the file.
 - The template renders each diff with @pierre/diffs@1.5.2: split by default (unified below 860px), wrapped lines, no line numbers (the code is shortened), simple hunk separators, and no collapsed lines. Before the library loads, it shows a plain unified diff.
 - The diff viewer, the plain diff and the budget ignore leading and trailing whitespace, as GitHub’s “Hide whitespace” does. A line that only changes its indentation (for example, code that the PR wraps in a `try` or moves into a new function) is an unchanged row, and each side keeps its own indentation. Thus show such code with its real indentation on each side, and do not shorten it only because the PR re-indents it.
 - If a diff still shows the same line as removed and as added (code that the PR moves to another place in the shown code) and the reader cannot easily follow it, split the diff into smaller diffs, so that each one shows one change.
-- The diff header shows the path and only `↗`, which opens the file in the PR's "Files changed" tab.
+- The diff header shows the path and only `↗`, which opens the PR's "Files changed" tab at the `data-line` of the diff.
 - ✓ Each code line is at most 100 columns, with a tab as 2 columns. Break long lines as the repo formatter would.
 - When possible and reasonable, wrap each comment in the shown code (code comments and page comments, on both sides) at 80 columns, with a tab as 2 columns, so that it fits one side of the split view. Break at a phrase boundary, so that a short last line (for example `// first.`) does not stay alone.
 - Keep the repo's indentation (tabs).
@@ -360,9 +361,9 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 - The PR link in the header opens the PR's conversation.
 - The preview link in the sidebar opens the production preview deploy of the PR.
-- Diffs link to the PR's "Files changed" tab, so they always show the latest code. Test names link to their line in that tab.
+- Diffs link to their first changed line in the PR's "Files changed" tab, so they always show the latest code. Test names link to their line in that tab.
 - Comment authors link to their comments on GitHub.
-- Chart boxes link to permalinks at `data-head-sha`, with line numbers from that commit. When the PR gets new commits, update `data-head-sha`, the line numbers of chart boxes and tests, and `.stats`.
+- Chart boxes link to permalinks at `data-head-sha`, with line numbers from that commit. When the PR gets new commits, update `data-head-sha`, the line numbers of diffs, chart boxes and tests, and `.stats`.
 
 ## Changing the template
 

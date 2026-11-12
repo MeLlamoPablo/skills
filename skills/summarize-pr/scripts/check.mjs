@@ -197,6 +197,12 @@ for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([
 	for (const [, side, code] of body.matchAll(DIFF_SCRIPT)) sides[side] = code
 	if (!sides.old.trim() && !sides.new.trim()) errors.push(`${name}: no old or new code.`)
 
+	// The header link opens this line in the "Files changed" tab, so that it does not land at the top of the file.
+	const line = attribute(attributes, "data-line")
+	if (!/^\d+$/.test(line ?? "")) {
+		errors.push(`${name}: data-line="${line ?? ""}" must be the line of the first changed line of the diff.`)
+	}
+
 	for (const [side, code] of Object.entries(sides)) {
 		for (const line of toLines(code)) {
 			const columns = line.replaceAll("\t", " ".repeat(TAB_WIDTH)).length

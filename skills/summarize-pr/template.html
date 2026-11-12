@@ -676,7 +676,7 @@ digraph {
 			<p>{{what the PR relies on}}</p>
 		</div>
 		<p class="note">{{…}}</p>
-		<figure class="diff" data-path="{{path}}" data-lang="typescript">
+		<figure class="diff" data-path="{{path}}" data-line="{{first changed line}}" data-lang="typescript">
 <script type="text/plain" class="old">
 {{old code}}
 </script>
@@ -878,7 +878,12 @@ async function prFileUrl(path, line, side = "R") {
 	}
 }
 
-const fileUrls = await Promise.all(figures.map(figure => prFileUrl(figure.dataset.path)))
+// A diff with only old code shows deleted code, so its line is on the merge base side.
+const fileUrls = await Promise.all(
+	figures.map(figure =>
+		prFileUrl(figure.dataset.path, figure.dataset.line, figure.querySelector("script.new") ? "R" : "L"),
+	),
+)
 
 let shownAdditions = 0
 let shownDeletions = 0
