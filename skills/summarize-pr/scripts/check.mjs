@@ -1,6 +1,7 @@
 // Checks a summarize-pr page against the Form rules that a script can check.
 // Usage: node check.mjs <page.html>
 // Prints the shown-line budget and every rule the page breaks. Exits with 1 if it breaks any.
+import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -141,6 +142,51 @@ let shownAdditions = 0
 let shownDeletions = 0
 let shownContext = 0
 
+// Code at the base: the lines that the PR removes, and the figure's file at the merge base. When 3 added lines in a
+// row are also 3 lines in a row at the base, that code moved or was extracted. full.diff alone is not enough: git
+// shows most of an extract within one file as unchanged lines, which the diff leaves out.
+const MOVED_RUN = 3
+const isMeaningful = line => line.length >= 8 && /[A-Za-z0-9]/.test(line) && !line.startsWith("//")
+const addRuns = (keys, lines) => {
+	const meaningful = lines.map(line => line.trim()).filter(isMeaningful)
+	for (let index = 0; index + MOVED_RUN <= meaningful.length; index++) {
+		keys.add(meaningful.slice(index, index + MOVED_RUN).join("\n"))
+	}
+	return keys
+}
+const removedRuns = new Set()
+const fullDiffPath = join(dirname(pagePath), "full.diff")
+if (existsSync(fullDiffPath)) {
+	for (const file of readFileSync(fullDiffPath, "utf8").split(/^diff --git /m)) {
+		const removed = file.split("\n").filter(line => line.startsWith("-") && !line.startsWith("---"))
+		addRuns(removedRuns, removed.map(line => line.slice(1)))
+	}
+}
+const prJsonPath = join(dirname(pagePath), "pr.json")
+const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+let mergeBase
+if (existsSync(prJsonPath)) {
+	const { baseRefName, headRefOid } = JSON.parse(readFileSync(prJsonPath, "utf8"))
+	try {
+		mergeBase = git("merge-base", `origin/${baseRefName}`, headRefOid).trim()
+	} catch {
+		warnings.push("Cannot find the merge base, so moved or extracted code is not checked. Run the check from the repo of the PR.")
+	}
+}
+const baseRunsByPath = new Map()
+const baseRunsOf = path => {
+	if (!baseRunsByPath.has(path)) {
+		let lines = []
+		try {
+			if (mergeBase) lines = git("show", `${mergeBase}:${path}`).split("\n")
+		} catch {
+			// The file is new in the PR.
+		}
+		baseRunsByPath.set(path, addRuns(new Set(), lines))
+	}
+	return baseRunsByPath.get(path)
+}
+
 for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([\s\S]*?)<\/figure>/g)) {
 	const path = attribute(attributes, "data-path")
 	const name = path ?? "(figure without data-path)"
@@ -167,12 +213,25 @@ for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([
 	}
 
 	if (diffLines) {
+		// Each run of added lines, split at the other rows. Comments and short lines do not split a run.
+		const addedRuns = [[]]
 		for (const row of diffLines(toLines(sides.old), toLines(sides.new))) {
 			// Blank lines are only there to make the code easy to read, as in the page header count.
 			if (row.text.trim() === "") continue
 			if (row.kind === "add") shownAdditions++
 			if (row.kind === "del") shownDeletions++
 			if (row.kind === "same") shownContext++
+			if (row.kind === "add") addedRuns.at(-1).push(row.text)
+			else addedRuns.push([])
+		}
+		const baseRuns = path === undefined ? new Set() : baseRunsOf(path)
+		const moved = addedRuns
+			.flatMap(lines => [...addRuns(new Set(), lines)])
+			.find(run => removedRuns.has(run) || baseRuns.has(run))
+		if (moved) {
+			warnings.push(
+				`${name}: added lines that are also in a row at the base, so the code moved or was extracted. Show the base code on the old side, so that they are unchanged rows: ${moved.split("\n")[0]}`,
+			)
 		}
 	}
 
