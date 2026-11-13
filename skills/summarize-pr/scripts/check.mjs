@@ -133,6 +133,11 @@ if (!Number.isInteger(prAdditions) || !Number.isInteger(prDeletions)) {
 // Run the same diff as the page, so the budget matches the counts in the page header.
 const diffLinesSource = moduleScript?.match(/\/\/ diff-lines:start[^\n]*\n([\s\S]*?)\/\/ diff-lines:end/)?.[1]
 const diffLines = diffLinesSource ? new Function(`${diffLinesSource}\nreturn diffLines`)() : undefined
+// The page shows each hidden block (between `//{` and `//}`) as one row first, so the counts use that row.
+const hiddenBlocksSource = moduleScript?.match(/\/\/ hidden-blocks:start[^\n]*\n([\s\S]*?)\/\/ hidden-blocks:end/)?.[1]
+const { splitHiddenBlocks, EXPANDER } = hiddenBlocksSource
+	? new Function(`${hiddenBlocksSource}\nreturn { splitHiddenBlocks, EXPANDER }`)()
+	: { splitHiddenBlocks: lines => ({ collapsed: lines, expanded: lines }), EXPANDER: /^$/ }
 const toLines = text => {
 	const trimmed = text.replace(/^\n/, "").replace(/\s+$/, "")
 	return trimmed === "" ? [] : trimmed.split("\n")
@@ -141,6 +146,7 @@ const toLines = text => {
 let shownAdditions = 0
 let shownDeletions = 0
 let shownContext = 0
+let hiddenContext = 0
 
 // Code at the base: the lines that the PR removes, and the figure's file at the merge base. When 3 added lines in a
 // row are also 3 lines in a row at the base, that code moved or was extracted. full.diff alone is not enough: git
@@ -218,10 +224,54 @@ for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([
 		}
 	}
 
+	// Hidden blocks: unchanged code that the reader opens with a click. It must be the same on both sides, so that it is
+	// only unchanged rows.
+	const blocks = { old: [], new: [] }
+	for (const [side, code] of Object.entries(sides)) {
+		let block = null
+		for (const line of toLines(code)) {
+			if (EXPANDER.test(line.trim())) {
+				errors.push(`${name} (${side}): "${line.trim()}" is the row that the page writes for a hidden block. Write the block between //{ and //}.`)
+			}
+			if (/^\s*\/\/\{\s*$/.test(line)) {
+				if (block) errors.push(`${name} (${side}): a //{ line is inside a hidden block. Hidden blocks do not nest.`)
+				block = []
+				continue
+			}
+			if (/^\s*\/\/\}\s*$/.test(line)) {
+				if (!block) errors.push(`${name} (${side}): a //} line has no //{ line before it.`)
+				else blocks[side].push(block)
+				block = null
+				continue
+			}
+			block?.push(line.trim())
+		}
+		if (block) errors.push(`${name} (${side}): a //{ line has no //} line after it.`)
+	}
+	const blockCount = Math.max(blocks.old.length, blocks.new.length)
+	if (blockCount > 0) {
+		if (!sides.old.trim() || !sides.new.trim()) {
+			errors.push(`${name}: a hidden block is only for unchanged code, so it needs both an old and a new side.`)
+		} else if (blocks.old.length !== blocks.new.length) {
+			errors.push(`${name}: the old side has ${blocks.old.length} hidden blocks and the new side ${blocks.new.length}. They must match.`)
+		} else {
+			blocks.new.forEach((lines, index) => {
+				if (lines.join("\n") !== blocks.old[index].join("\n")) {
+					errors.push(`${name}: hidden block ${index + 1} is not the same on both sides. Hide only unchanged code.`)
+				}
+				if (lines.filter(line => line !== "").length === 0) errors.push(`${name}: hidden block ${index + 1} is empty.`)
+				hiddenContext += lines.filter(line => line !== "").length
+			})
+		}
+	}
+	const shown = Object.fromEntries(
+		Object.entries(sides).map(([side, code]) => [side, splitHiddenBlocks(toLines(code)).collapsed]),
+	)
+
 	if (diffLines) {
 		// Each run of added lines, split at the other rows. Comments and short lines do not split a run.
 		const addedRuns = [[]]
-		for (const row of diffLines(toLines(sides.old), toLines(sides.new))) {
+		for (const row of diffLines(shown.old, shown.new)) {
 			// Blank lines are only there to make the code easy to read, as in the page header count.
 			if (row.text.trim() === "") continue
 			if (row.kind === "add") shownAdditions++
@@ -250,8 +300,10 @@ for (const [, attributes, body] of html.matchAll(/<figure class="diff"([^>]*)>([
 			errors.push(`${name}: a thread has no data-side="old" or data-side="new".`)
 			continue
 		}
-		if (!Number.isInteger(line) || line < 1 || line > toLines(sides[side]).length) {
+		if (!Number.isInteger(line) || line < 1 || line > shown[side].length) {
 			errors.push(`${name}: a thread has data-line="${attribute(threadAttributes, "data-line")}", not a line of the ${side} code.`)
+		} else if (EXPANDER.test(shown[side][line - 1].trim())) {
+			errors.push(`${name}: a thread is on a hidden block. Show the line of the thread outside the //{ … //} block.`)
 		}
 		if (!thread.includes('<div class="comment"')) errors.push(`${name}: a thread has no comments.`)
 	}
@@ -461,7 +513,7 @@ if (prLines > 0) {
 	const share = shownLines / prLines
 	console.log(
 		`Shown: ${shownLines} lines (+${shownAdditions} with ${testNames.length} test names, −${shownDeletions}; ` +
-			`${shownContext} unchanged lines do not count) of ${prLines} PR lines = ${(share * 100).toFixed(1)}% ` +
+			`${shownContext} unchanged and ${hiddenContext} hidden lines do not count) of ${prLines} PR lines = ${(share * 100).toFixed(1)}% ` +
 			`(limit ${BUDGET_RATIO * 100}%)`,
 	)
 	if (share > BUDGET_RATIO) errors.push(`The page shows more than ${BUDGET_RATIO * 100}% of the PR lines.`)

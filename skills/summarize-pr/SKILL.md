@@ -148,6 +148,11 @@ A decision is a choice that shapes the PR, and that a reviewer can want done dif
 - Each comment that you show must make sense with only the shown code. When it names code that the diff leaves out (for example `// Checked before process` without the `process` call), show that code, shortened, or leave out the comment. Leave it out when that code is an implementation detail.
 - Full implementations that are not shortened must be extremely rare.
 - Shorten for reading, not only for line count. Also cut what the reviewer does not need inside the lines that you show, for example the type of a local variable (`const row = {}`) or a filter that is an implementation detail.
+- **Hidden context:** when the reader can't understand a change without unchanged code around it, put that code in a hidden block (see [Form](#hidden-blocks)). The page shows each block as one row, `// ▸ <n> more lines`, and one click shows all the hidden blocks of the file. Use it for:
+  - The callers or siblings that give the change its meaning. For example, the functions that call a new check, or the checks next to a check that the PR moves.
+  - The body of a function whose shown signature or shown line uses a value that the diff does not define (for example, where a `current` parameter comes from).
+  - Do not use it to show more code because it is free. Hidden lines do not count toward the budget, but each hidden line must help the reader understand the shown change. Shorten hidden code as other code (`// ...` for guards and implementation details), and keep the parts that do not explain the change out of the block.
+  - Keep the shown code readable without the hidden code: the collapsed diff is what most readers see.
 - Show where each snippet is: keep the enclosing declaration (function, class, method or config object) around it, shortened, for example `export async function handle(/* ... */) {` … `}`. Do this when the snippet is not itself a top-level declaration.
 - The page diffs only the code that it shows. When you show code that is also on the other side of the diff (at the base for the new side, at the head for the old side), show it on both sides, shortened in the same way (the same `// ...` in the same places). Else it looks added or removed, also when the PR changes only one line in it. Do this also when you add code to one side in a later update of the page.
 - Show both ends of each contract: where the code makes the value and where the code reads it.
@@ -298,13 +303,13 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 
 ### Budget
 
-- ✓ The shown lines are at most **20%** of the PR's additions + deletions. The shown lines are the added and removed rows of each shown diff (a line diff of the shown old and new code), plus the test names. Unchanged rows, blank lines and the thread text do not count, so the budget uses the same counts as the page header. Unchanged rows are still not free: show only the context that the reader needs to place the change (for example the enclosing structure), shortened as the [Code](#code) rules say.
+- ✓ The shown lines are at most **20%** of the PR's additions + deletions. The shown lines are the added and removed rows of each shown diff (a line diff of the shown old and new code), plus the test names. Unchanged rows, blank lines and the thread text do not count, so the budget uses the same counts as the page header. Unchanged rows are still not free: show only the context that the reader needs to place the change (for example the enclosing structure), shortened as the [Code](#code) rules say. A hidden block counts as one unchanged row, and its lines do not count. `check.mjs` reports them as "hidden lines".
 
 ### Diffs
 
 - Each diff is `<figure class="diff" data-path="<repo path>" data-line="<n>" data-lang="<language>">` with `<script type="text/plain" class="old">` and `<script type="text/plain" class="new">`. A new file has only `new`, and a deleted file has only `old`. A diff can show only a part of a file, and one file can have more than one diff. Add `data-name` only to show a shorter name than the path, or to show a move: for a move, `data-path` is the new path and `data-name` is `<old path> → <new path>`.
 - ✓ `data-line` is the line of the first changed line of the shown code: in the head commit, or at the merge base for a diff with only old code. Pick a line that the PR adds or changes, because the “Files changed” tab has an anchor only for a line in its diff. The header link then opens the shown code, not the top of the file.
-- The template renders each diff with @pierre/diffs@1.5.2: split by default (unified below 860px), wrapped lines, no line numbers (the code is shortened), simple hunk separators, and no collapsed lines. Before the library loads, it shows a plain unified diff.
+- The template renders each diff with @pierre/diffs@1.5.2: split by default (unified below 860px), wrapped lines, no line numbers (the code is shortened), simple hunk separators, and no collapsed lines except hidden blocks. Before the library loads, it shows a plain unified diff.
 - The diff viewer, the plain diff and the budget ignore leading and trailing whitespace, as GitHub’s “Hide whitespace” does. A line that only changes its indentation (for example, code that the PR wraps in a `try` or moves into a new function) is an unchanged row, and each side keeps its own indentation. Thus show such code with its real indentation on each side, and do not shorten it only because the PR re-indents it.
 - If a diff still shows the same line as removed and as added (code that the PR moves to another place in the shown code) and the reader cannot easily follow it, split the diff into smaller diffs, so that each one shows one change.
 - The diff header shows the path and only `↗`, which opens the PR's "Files changed" tab at the `data-line` of the diff.
@@ -313,6 +318,19 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 - Keep the repo's indentation (tabs).
 - Make each diff easy to read, also when the PR code is not. Put blank lines in the shown code as [space-around.md](space-around.md) says, on both sides of the diff. A `// ...` counts as the code that it leaves out: put a blank line after it when that code ends a step (for example a guard). Blank lines do not count toward the budget.
 - Do not let the indentation jump: when the shown code is inside a block that you leave out (for example a `try`), show the block's opening and closing lines, shortened.
+- <a id="hidden-blocks"></a>A hidden block is unchanged code between a line `//{` and a line `//}`, at the indentation of the code. Write it on both sides, with the same lines (only the indentation can differ). For example:
+  ```ts
+  function requireEditableNode(tree: WorkerTree, nodeId: string): WorkerNodeAccessor {
+  	//{
+  	const accessor = tree.hierarchy.has(nodeId) ? tree.getAccessor(nodeId) : undefined
+  	assertAbTestAttributesAreMutable(tree, accessor)
+  	//}
+  	assertCustomCodeIsMutable(accessor)
+  ```
+  - ✓ The two markers are on their own lines, and blocks do not nest. ✓ Each side has the same number of blocks, and each block has the same lines on both sides. ✓ A diff with only old or only new code has no hidden blocks: its code is not unchanged.
+  - ✓ A thread's `data-line` counts lines as the page shows them first: a hidden block is one line. ✓ A thread is never on a hidden block.
+  - Do not write the `// ▸ <n> more lines` row yourself. The template writes it.
+  - The template shows the row in the accent color. A click (or Enter) on it shows all hidden blocks in all diffs of that file, in the diff viewer and in the plain diff. The page has no control to hide them again.
 - Shorten with `// ...` for left-out statements and `/* ... */` for left-out expressions, parameters and types. A shortened literal must not look complete: write `{ endpoint: /* ... */, siteId, root }`, not `{ endpoint, siteId, root }`.
 - ✓ No `import` lines and no `export … from` lines.
 - The code must not contain `</script`.

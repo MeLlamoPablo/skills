@@ -496,6 +496,8 @@ figure.diff.upgraded .fallback { display: none; }
 	color: color-mix(in srgb, var(--accent) 55%, var(--muted));
 	cursor: help;
 }
+.fallback .row.expander { color: var(--accent); cursor: pointer; }
+.fallback .row.expander:hover, .fallback .row.expander:focus-visible { text-decoration: underline; }
 
 .tests { display: grid; gap: 18px; }
 .tests h3 {
@@ -714,9 +716,45 @@ const figures = [...document.querySelectorAll("figure.diff")]
 const PAGE_COMMENT_TITLE = "Not in the code: this comment is only on this page."
 const pageComments = new Set()
 
+// hidden-blocks:start (check.mjs runs this function to count the shown lines)
+// Unchanged code between a `//{` line and a `//}` line only gives context to the change. The page hides each such block
+// behind one row, `// ▸ <n> more lines`, until the reader clicks it. Returns the lines as the page shows them first
+// (`collapsed`), the lines with all blocks open (`expanded`), and for each collapsed line its line number in `expanded`.
+const EXPANDER = /^\/\/ ▸ \d+ more lines?$/
+function splitHiddenBlocks(lines) {
+	const collapsed = []
+	const expanded = []
+	const expandedLineOf = []
+	let block = null
+	for (const line of lines) {
+		if (!block && /^\s*\/\/\{\s*$/.test(line)) {
+			block = { indent: line.match(/^\s*/)[0], lines: [] }
+			continue
+		}
+		if (block && /^\s*\/\/\}\s*$/.test(line)) {
+			const count = block.lines.length
+			collapsed.push(`${block.indent}// ▸ ${count} more line${count === 1 ? "" : "s"}`)
+			expandedLineOf.push(expanded.length + 1)
+			for (const hiddenLine of block.lines) expanded.push(hiddenLine)
+			block = null
+			continue
+		}
+		if (block) {
+			block.lines.push(line)
+			continue
+		}
+		collapsed.push(line)
+		expanded.push(line)
+		expandedLineOf.push(expanded.length)
+	}
+	return { collapsed, expanded, expandedLineOf }
+}
+// hidden-blocks:end
+
+// Returns the code of one side as the page shows it first, and with its hidden blocks open.
 function readSide(figure, side) {
 	const element = figure.querySelector(`script.${side}`)
-	if (!element) return ""
+	if (!element) return { text: "", expandedText: "", expandedLineOf: [] }
 	const text = element.textContent
 		.replace(/^\n/, "")
 		.replace(/\s+$/, "")
@@ -725,12 +763,16 @@ function readSide(figure, side) {
 			return `${indent}//${comment}`
 		})
 	// An empty side is no file, not a file with one empty line.
-	return text === "" ? "" : text + "\n"
+	if (text === "") return { text: "", expandedText: "", expandedLineOf: [] }
+	const { collapsed, expanded, expandedLineOf } = splitHiddenBlocks(text.split("\n"))
+	return { text: collapsed.join("\n") + "\n", expandedText: expanded.join("\n") + "\n", expandedLineOf }
 }
 
 function toLines(text) {
 	return text === "" ? [] : text.replace(/\n$/, "").split("\n")
 }
+
+const hasHiddenBlocks = figure => toLines(readSide(figure, "new").text).some(line => EXPANDER.test(line.trim()))
 
 // diff-lines:start (check.mjs runs this function to count the shown lines)
 // Line-level LCS diff for the plain view that shows before the diff viewer loads.
@@ -888,23 +930,26 @@ const fileUrls = await Promise.all(
 let shownAdditions = 0
 let shownDeletions = 0
 
-figures.forEach((figure, index) => {
-	figure.dataset.href = fileUrls[index]
-	figure.dataset.name ??= figure.dataset.path
-	const rows = diffLines(toLines(readSide(figure, "old")), toLines(readSide(figure, "new")))
-	const fallback = document.createElement("div")
-	fallback.className = "fallback"
-	const head = document.createElement("div")
-	head.className = "fallback-head"
-	head.append(githubLink(figure.dataset.href, figure.dataset.name))
+const EXPANDER_TITLE = "Show the code around the changes in this file"
+
+// The line of a thread on the code with its hidden blocks open. Its data-line counts the lines as the page shows them
+// first.
+function threadLine(figure, thread, expanded) {
+	const line = Number(thread.dataset.line)
+	return expanded ? readSide(figure, thread.dataset.side).expandedLineOf[line - 1] : line
+}
+
+// The plain view, unified only, that shows before the diff viewer loads.
+function renderFallbackCode(figure, expanded) {
+	const oldSide = readSide(figure, "old")
+	const newSide = readSide(figure, "new")
+	const rows = expanded
+		? diffLines(toLines(oldSide.expandedText), toLines(newSide.expandedText))
+		: diffLines(toLines(oldSide.text), toLines(newSide.text))
 	const pre = document.createElement("pre")
 	const threads = readThreads(figure)
 	const lineNumbers = { old: 0, new: 0 }
 	for (const row of rows) {
-		// Blank lines are only there to make the code easy to read, so they do not count as shown lines.
-		const isBlank = row.text.trim() === ""
-		if (row.kind === "add" && !isBlank) shownAdditions++
-		if (row.kind === "del" && !isBlank) shownDeletions++
 		if (row.kind !== "add") lineNumbers.old++
 		if (row.kind !== "del") lineNumbers.new++
 		const line = document.createElement("span")
@@ -914,18 +959,82 @@ figures.forEach((figure, index) => {
 			line.classList.add("page-comment")
 			line.title = PAGE_COMMENT_TITLE
 		}
+		if (!expanded && row.kind === "same" && EXPANDER.test(row.text.trim())) {
+			line.classList.add("expander")
+			line.title = EXPANDER_TITLE
+			line.tabIndex = 0
+			line.setAttribute("role", "button")
+		}
 		pre.append(line)
 		for (const thread of threads) {
 			const { side } = thread.dataset
 			const isOnSide = side === "old" ? row.kind !== "add" : row.kind !== "del"
-			if (isOnSide && lineNumbers[side] === Number(thread.dataset.line)) pre.append(thread.cloneNode(true))
+			if (isOnSide && lineNumbers[side] === threadLine(figure, thread, expanded)) pre.append(thread.cloneNode(true))
 		}
 	}
-	fallback.append(head, pre)
+	return pre
+}
+
+figures.forEach((figure, index) => {
+	figure.dataset.href = fileUrls[index]
+	figure.dataset.name ??= figure.dataset.path
+	for (const row of diffLines(toLines(readSide(figure, "old").text), toLines(readSide(figure, "new").text))) {
+		// Blank lines are only there to make the code easy to read, so they do not count as shown lines.
+		const isBlank = row.text.trim() === ""
+		if (row.kind === "add" && !isBlank) shownAdditions++
+		if (row.kind === "del" && !isBlank) shownDeletions++
+	}
+	const fallback = document.createElement("div")
+	fallback.className = "fallback"
+	const head = document.createElement("div")
+	head.className = "fallback-head"
+	head.append(githubLink(figure.dataset.href, figure.dataset.name))
+	fallback.append(head, renderFallbackCode(figure, false))
 	const viewer = document.createElement("div")
 	viewer.className = "pierre"
 	figure.append(fallback, viewer)
 })
+
+// The diff viewer of each figure, when it loads.
+const viewers = new Map()
+
+function diffFiles(figure, expanded) {
+	const { name, lang } = figure.dataset
+	const oldSide = readSide(figure, "old")
+	const newSide = readSide(figure, "new")
+	return {
+		oldFile: { name, lang, contents: expanded ? oldSide.expandedText : oldSide.text },
+		newFile: { name, lang, contents: expanded ? newSide.expandedText : newSide.text },
+		lineAnnotations: readThreads(figure).map(thread => ({
+			side: thread.dataset.side === "old" ? "deletions" : "additions",
+			lineNumber: threadLine(figure, thread, expanded),
+			metadata: thread,
+		})),
+	}
+}
+
+// One click shows the hidden code of all diffs of the file. The page has no control to hide it again: the reader
+// reloads the page for that.
+function showHiddenCode(path) {
+	for (const figure of figures) {
+		if (figure.dataset.path !== path || "expanded" in figure.dataset || !hasHiddenBlocks(figure)) continue
+		figure.dataset.expanded = ""
+		figure.querySelector(".fallback pre").replaceWith(renderFallbackCode(figure, true))
+		viewers.get(figure)?.render({ ...diffFiles(figure, true), forceRender: true })
+	}
+}
+
+function onExpanderEvent(event, path) {
+	if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return
+	if (!event.composedPath().some(node => node.classList?.contains("expander") || node.dataset?.expander === "")) return
+	event.preventDefault()
+	showHiddenCode(path)
+}
+
+for (const figure of figures) {
+	const fallback = figure.querySelector(".fallback")
+	for (const type of ["click", "keydown"]) fallback.addEventListener(type, event => onExpanderEvent(event, figure.dataset.path))
+}
 
 const TEST_CHANGE_TITLES = { added: "Added test", modified: "Modified test", removed: "Removed test" }
 for (const group of document.querySelectorAll(".tests [data-path]")) {
@@ -1217,11 +1326,24 @@ function showDiffStyle() {
 }
 
 // The diff viewer renders the lines in its shadow root, and renders them again on each update.
-function markPageComments(root) {
+function markLines(root, figure) {
+	const isExpanded = "expanded" in figure.dataset
 	for (const line of root?.querySelectorAll("[data-line-type]") ?? []) {
-		if (!pageComments.has(line.textContent.trim())) continue
-		line.dataset.pageComment = ""
-		line.title = PAGE_COMMENT_TITLE
+		const text = line.textContent.trim()
+		if (pageComments.has(text)) {
+			line.dataset.pageComment = ""
+			line.title = PAGE_COMMENT_TITLE
+		}
+		if (!isExpanded && EXPANDER.test(text)) {
+			line.dataset.expander = ""
+			line.title = EXPANDER_TITLE
+			line.tabIndex = 0
+			line.setAttribute("role", "button")
+		}
+	}
+	if (root && !root.expanderListeners) {
+		root.expanderListeners = true
+		for (const type of ["click", "keydown"]) root.addEventListener(type, event => onExpanderEvent(event, figure.dataset.path))
 	}
 }
 
@@ -1229,7 +1351,7 @@ try {
 	const { FileDiff } = await import("https://cdn.jsdelivr.net/npm/@pierre/diffs@1.5.2/+esm")
 	const instances = []
 	for (const figure of figures) {
-		const { name, lang, href } = figure.dataset
+		const { href } = figure.dataset
 		const target = figure.querySelector(".pierre")
 		const instance = new FileDiff({
 			theme: { dark: "pierre-dark", light: "pierre-light" },
@@ -1254,21 +1376,16 @@ try {
 			// Custom properties such as --accent inherit into the shadow root. The tokens have their own
 			// colors, and the theme colors object keys orange too, so the accent is mixed with gray.
 			unsafeCSS: `[data-page-comment] { cursor: help; }
-			[data-page-comment] span { color: color-mix(in srgb, var(--accent) 55%, var(--muted)) !important; }`,
-			onPostRender: node => markPageComments(node.shadowRoot),
+			[data-page-comment] span { color: color-mix(in srgb, var(--accent) 55%, var(--muted)) !important; }
+			[data-expander] { cursor: pointer; }
+			[data-expander] span { color: var(--accent) !important; }
+			[data-expander]:hover span, [data-expander]:focus-visible span { text-decoration: underline; }`,
+			onPostRender: node => markLines(node.shadowRoot, figure),
 		})
-		instance.render({
-			oldFile: { name, lang, contents: readSide(figure, "old") },
-			newFile: { name, lang, contents: readSide(figure, "new") },
-			lineAnnotations: readThreads(figure).map(thread => ({
-				side: thread.dataset.side === "old" ? "deletions" : "additions",
-				lineNumber: Number(thread.dataset.line),
-				metadata: thread,
-			})),
-			containerWrapper: target,
-		})
+		instance.render({ ...diffFiles(figure, false), containerWrapper: target })
 		if (target.childElementCount > 0) figure.classList.add("upgraded")
 		instances.push(instance)
+		viewers.set(figure, instance)
 	}
 	new MutationObserver(() => {
 		for (const instance of instances) instance.setThemeType(currentThemeType())
