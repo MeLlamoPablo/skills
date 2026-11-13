@@ -1093,6 +1093,83 @@ new ResizeObserver(() => {
 	prLink.closest("main").style.setProperty("--pr-link-width", `${prLink.offsetWidth}px`)
 }).observe(prLink)
 
+// The page is published again at the same URL after each update of the PR, and the viewer reloads it. The page keeps the
+// block that the reader was reading, and the reader's distance into it, so the reload does not move the reader. A block
+// is a part of the page text (a heading, a note, a diff), found again by its text or its file, because an update can
+// add or remove blocks around it. Pixel positions alone would point elsewhere after a change or after the diffs load.
+const SCROLL_KEY = `scroll:${repoUrl}/pull/${pr}`
+const scrollBlocks = () => [...document.querySelectorAll("main > header > *, main section > *")]
+
+function scrollBlockKeys() {
+	const counts = new Map()
+	return scrollBlocks().map(block => {
+		const name = block.matches("figure.diff")
+			? `diff ${block.dataset.path} ${block.dataset.name ?? ""}`
+			: `${block.tagName} ${block.closest("section")?.id ?? "header"} ${block.textContent.trim().slice(0, 80)}`
+		const count = counts.get(name) ?? 0
+		counts.set(name, count + 1)
+		return `${name} #${count}`
+	})
+}
+
+function saveScrollPosition() {
+	const blocks = scrollBlocks()
+	const index = blocks.findIndex(block => block.getBoundingClientRect().bottom > 0)
+	if (index === -1) return
+	const position = { key: scrollBlockKeys()[index], offset: -blocks[index].getBoundingClientRect().top, y: scrollY }
+	try {
+		localStorage.setItem(SCROLL_KEY, JSON.stringify(position))
+	} catch {}
+}
+
+function readScrollPosition() {
+	try {
+		return JSON.parse(localStorage.getItem(SCROLL_KEY) ?? "null")
+	} catch {
+		return null
+	}
+}
+
+// A link to a part of the page wins over the kept position.
+const savedScrollPosition = location.hash ? null : readScrollPosition()
+let isRestoringScroll = savedScrollPosition !== null
+
+function restoreScrollPosition() {
+	if (!isRestoringScroll) return
+	const index = scrollBlockKeys().indexOf(savedScrollPosition.key)
+	const top =
+		index === -1
+			? savedScrollPosition.y
+			: scrollBlocks()[index].getBoundingClientRect().top + scrollY + savedScrollPosition.offset
+	window.scrollTo({ top, behavior: "instant" })
+}
+
+if (isRestoringScroll) {
+	history.scrollRestoration = "manual"
+	restoreScrollPosition()
+	// The diffs and charts load after this and change the page height. Until the reader scrolls, each change of the
+	// height moves the page back to the kept block.
+	const stopRestoring = () => {
+		isRestoringScroll = false
+	}
+	for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) {
+		addEventListener(type, stopRestoring, { once: true, passive: true })
+	}
+	new ResizeObserver(restoreScrollPosition).observe(document.querySelector("main"))
+	setTimeout(stopRestoring, 10_000)
+}
+
+let scrollSaveFrame = 0
+addEventListener(
+	"scroll",
+	() => {
+		if (isRestoringScroll) return
+		cancelAnimationFrame(scrollSaveFrame)
+		scrollSaveFrame = requestAnimationFrame(saveScrollPosition)
+	},
+	{ passive: true },
+)
+
 // Graphviz lays out each arrow label like a box, so labels do not overlap boxes or other labels.
 // It measures text with Helvetica metrics, which are close to the page font.
 const chartFont = { fontname: "Helvetica", fontsize: 16 }

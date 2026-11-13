@@ -236,6 +236,7 @@ The rules marked ✓ are checked by `scripts/check.mjs` or `scripts/render-chart
 - ✓ The page is a copy of `template.html`. Fill only the `{{…}}` slots and the content between them. Do not change the `<style>` block or the module script. Freeform blocks (see [Freeform blocks](#freeform-blocks-1)) are the only HTML that the template does not have.
 - ✓ No `{{…}}` slot is left in the page.
 - The page is one private Claude Artifact. `<title>` and `<h1>` are the PR title, exactly as on GitHub.
+- The template keeps the reader's position when the page reloads after a new publish. It saves the block at the top of the window (a heading, a note or a diff, found again by its text or its file) and the distance into it, and scrolls back to it while the diffs and charts load. A link to a part of the page (`#…`) wins over the saved position. So publish each update to the same URL, and do not rename sections or diffs without a reason.
 - ✓ `<main>` has `data-repo-url` (`https://github.com/<owner>/<repo>`), `data-pr` (the number) and `data-head-sha` (the full SHA of the head commit). The template makes all GitHub links from these values.
 
 ### Header
