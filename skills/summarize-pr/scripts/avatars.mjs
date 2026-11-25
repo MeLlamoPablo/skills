@@ -1,5 +1,5 @@
-// Embeds the GitHub avatars of the comment authors in a summarize-pr page. The artifact host blocks external images,
-// so the page carries them as data URIs in one JSON block, which the template reads.
+// Embeds the avatars of the comment authors in a summarize-pr page. The artifact host blocks external images, so the
+// page carries them as data URIs in one JSON block, which the template reads: {"<author>": {"src": …, "bot": …}}.
 // Usage: node avatars.mjs <page.html>. It reads avatars.json, which gather.sh writes next to the page.
 import { readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"

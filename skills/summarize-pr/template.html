@@ -338,12 +338,12 @@ h1 {
 	.title-row { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; }
 	.pr-link { margin: 0; }
 }
-/* Text ends where the first title line ends, so it leaves the same space for the PR link. The script sets --pr-link-width, and 24px is the margin of .pr-link. In a narrow header, the link goes below the title, so text uses the full width. */
+/* Text ends where the first title line ends, so it leaves the same space for the PR link. The script sets --pr-link-space to the width of .pr-link and its margin, and leaves it unset when the page has no PR link. In a narrow header, the link goes below the title, so text uses the full width. */
 main { container: main / inline-size; }
 @container main (width > 720px) {
 	:is(header, section) > :is(.story, .note, .callout, .discarded, .decision, .assumption, .tests) {
 		box-sizing: border-box;
-		max-width: calc(min(100%, 1040px) - var(--pr-link-width, 0px) - 24px);
+		max-width: calc(min(100%, 1040px) - var(--pr-link-space, 0px));
 	}
 }
 .sidebar {
@@ -551,7 +551,7 @@ figure.example .fallback pre { padding: 8px 12px; white-space: pre-wrap; word-br
 }
 .tests [data-line] a:hover, .fallback-head a:hover, .diff-link:hover { color: var(--accent); text-decoration-color: currentColor; }
 
-/* GitHub review threads. The script shows a copy of each thread under its code line, so the original stays hidden. */
+/* Review threads. The script shows a copy of each thread under its code line, so the original stays hidden. */
 figure.diff > .thread { display: none; }
 .thread {
 	display: grid;
@@ -571,7 +571,7 @@ figure.diff > .thread { display: none; }
 .comment { display: grid; gap: 2px; }
 .comment + .comment { padding-top: 10px; border-top: 1px solid var(--rule); }
 .comment :is(p, ul, ol, pre, blockquote) { margin: 0; }
-/* The blocks of GitHub Markdown, which the script renders. */
+/* The Markdown blocks of the comments, which the script renders. */
 .comment blockquote {
 	padding-left: 12px;
 	border-left: 3px solid var(--rule);
@@ -601,7 +601,7 @@ figure.diff > .thread { display: none; }
 	border-radius: 50%;
 	background: var(--code-bg);
 }
-/* GitHub shows the avatars of apps as rounded squares, and of people as circles. */
+/* Bots have rounded square avatars and people round ones, as on most code hosts, so the reader tells them apart. */
 .comment-avatar[data-bot] { border-radius: 4px; }
 .comment a:hover { color: var(--accent); }
 .comment .comment-author:hover { text-decoration: underline; }
@@ -648,7 +648,7 @@ script[type="text/plain"] { display: none; }
 	<a class="preview-link" href="{{production preview URL}}" target="_blank" rel="noopener" title="Open the production preview of this pull request">Preview ↗</a>
 </aside>
 
-<main data-repo-url="https://github.com/{{owner}}/{{repo}}" data-pr="{{PR number}}" data-head-sha="{{head commit SHA}}">
+<main data-repo-url="{{web URL of the repo}}" data-pr="{{PR number}}" data-head-sha="{{head commit SHA}}">
 	<header>
 		<h1>{{PR title}}</h1>
 		<div class="story">
@@ -731,10 +731,18 @@ digraph {
 </main>
 </div>
 
+<script type="application/json" id="host">{{contents of host.json}}</script>
 <script type="module">
 const { repoUrl, pr, headSha } = document.querySelector("main").dataset
-const prFilesUrl = `${repoUrl}/pull/${pr}/files`
-const blobUrl = `${repoUrl}/blob/${headSha}/`
+// The host of the PR describes its URLs and names in the #host block, so the page works with any host. A URL in it
+// has {slots}, which fillUrl fills. A URL that the host can't make is null, and the page then shows no link. Without a
+// host (a branch summarized with git alone), all of them are null, and the repo URL and the PR number are empty.
+const host = JSON.parse(document.getElementById("host").textContent)
+const repoValues = repoUrl ? { repo: repoUrl, origin: new URL(repoUrl).origin, name: repoUrl.split("/").at(-1) } : {}
+Object.assign(repoValues, { pr, sha: headSha })
+const fillUrl = (url, values = {}) =>
+	url?.replace(/\{(\w+)\}/g, (slot, key) => ({ ...repoValues, ...values })[key] ?? slot) ?? null
+const prUrl = fillUrl(host.prUrl)
 const figures = [...document.querySelectorAll("figure.diff")]
 
 // A code line that starts with `//!` is a comment that is only on this page, not in the PR.
@@ -837,7 +845,9 @@ function diffLines(oldLines, newLines) {
 }
 // diff-lines:end
 
-function githubLink(href, text) {
+// Without a URL (the host can't make it), the text stays plain.
+function externalLink(href, text) {
+	if (!href) return Object.assign(document.createElement("span"), { textContent: text })
 	const link = document.createElement("a")
 	link.href = href
 	link.target = "_blank"
@@ -856,17 +866,24 @@ const avatars = JSON.parse(document.getElementById("avatars")?.textContent ?? "{
 
 const escapeHtml = text => text.replace(/[&<>"]/g, character => `&#${character.charCodeAt(0)};`)
 
-// GitHub links `#123` to that pull request or issue, and `@login` to that user.
-const githubReference = {
-	name: "githubReference",
+// The host links short references in comments, such as `#123` or `@login`. Each reference of the #host block is a
+// pattern and the URL it links to, where `$1` is the pattern's first group. A host with no references links none.
+const hostReferences = host.references ?? []
+const references = hostReferences.map(({ pattern, url }) => ({
+	pattern: new RegExp(`^(?:${pattern})(?![\\w-])`, "i"),
+	url,
+}))
+const referenceStart = new RegExp(`(?<![\\w/#@!])(?:${hostReferences.map(({ pattern }) => pattern).join("|")})`, "i")
+const hostReference = {
+	name: "hostReference",
 	level: "inline",
-	start: source => source.match(/(?<![\w/#@])[#@]\w/)?.index,
+	start: source => source.match(referenceStart)?.index,
 	tokenizer(source) {
 		if (this.lexer.state.inLink) return
-		const match = /^(?:#(\d+)|@([a-z\d](?:[a-z\d-]*[a-z\d])?))(?![\w-])/i.exec(source)
-		if (!match) return
-		const href = match[1] ? `${repoUrl}/issues/${match[1]}` : `https://github.com/${match[2]}`
-		return { type: "githubReference", raw: match[0], href }
+		for (const { pattern, url } of references) {
+			const match = pattern.exec(source)
+			if (match) return { type: "hostReference", raw: match[0], href: fillUrl(url).replace("$1", match[1]) }
+		}
 	},
 	renderer: ({ raw, href }) => `<a href="${href}">${raw}</a>`,
 }
@@ -876,10 +893,10 @@ async function loadMarkdown() {
 		const { Marked } = await import("https://cdn.jsdelivr.net/npm/marked@15.0.12/+esm")
 		return new Marked({
 			gfm: true,
-			// As in GitHub comments, a line break in the Markdown is a line break on the page.
-			breaks: true,
+			// Some hosts show a line break in a comment as a line break, and others as a space, as Markdown does.
+			breaks: host.markdownBreaks === true,
 			renderer: {
-				// GitHub removes most HTML from comments. The page shows it as text, so a comment runs no script.
+				// Hosts remove most HTML from comments. The page shows it as text, so a comment runs no script.
 				html: ({ text }) => escapeHtml(text),
 				// The page has its own heading sizes.
 				heading({ tokens }) {
@@ -888,7 +905,7 @@ async function loadMarkdown() {
 				// The artifact host blocks external images.
 				image: ({ href, text }) => `<a href="${escapeHtml(href)}">${escapeHtml(text || href)}</a>`,
 			},
-			extensions: [githubReference],
+			extensions: references.length > 0 ? [hostReference] : [],
 		})
 	} catch (error) {
 		console.warn("The Markdown renderer did not load. Comments show as plain text.", error)
@@ -918,38 +935,45 @@ const markdown = comments.length > 0 ? await loadMarkdown() : null
 for (const comment of comments) {
 	const source = comment.querySelector(':scope > script[type="text/markdown"]')
 	source.replaceWith(renderMarkdown(markdown, source.textContent.trim()))
-	const author = githubLink(comment.dataset.href, `${comment.dataset.author} ↗`)
+	const author = externalLink(comment.dataset.href, `${comment.dataset.author} ↗`)
 	author.className = "comment-author"
 	const avatar = avatars[comment.dataset.author]
 	if (avatar) {
 		const image = document.createElement("img")
 		image.className = "comment-avatar"
-		image.src = avatar
+		image.src = avatar.src
 		image.alt = ""
-		if (comment.dataset.author.endsWith("[bot]")) image.dataset.bot = ""
+		if (avatar.bot) image.dataset.bot = ""
 		author.prepend(image)
 	}
 	comment.prepend(author)
 }
 
-// GitHub names the anchor of a file in the "Files changed" tab after the SHA-256 of its path.
-// `R<line>` after it anchors a line of the head commit (the right side of the diff), and `L<line>` a line of the
-// merge base (the left side).
-async function prFileUrl(path, line, side = "R") {
+// A host can name a file in the changes of the PR by the SHA-1 or the SHA-256 of its path, the slots {sha1} and
+// {sha256}. A line on the "new" side is in the head commit, and a line on the "old" side is in the merge base. When the
+// host can't link the line, the link opens the file, else the changes of the PR, else nothing.
+async function prFileUrl(path, line, side = "new") {
+	const lineUrl = line ? host[side === "old" ? "oldLineUrl" : "newLineUrl"] : null
+	const url = lineUrl ?? host.changedFileUrl ?? host.changesUrl
+	if (!url) return null
+	const values = { path, line }
 	try {
-		const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(path))
-		const hex = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("")
-		return `${prFilesUrl}#diff-${hex}${line ? `${side}${line}` : ""}`
+		for (const [slot, algorithm] of [["sha1", "SHA-1"], ["sha256", "SHA-256"]]) {
+			if (!url.includes(`{${slot}}`)) continue
+			const digest = await crypto.subtle.digest(algorithm, new TextEncoder().encode(path))
+			values[slot] = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("")
+		}
+		return fillUrl(url, values)
 	} catch {
 		// crypto.subtle exists only in secure contexts.
-		return prFilesUrl
+		return fillUrl(host.changesUrl)
 	}
 }
 
 // A diff with only old code shows deleted code, so its line is on the merge base side.
 const fileUrls = await Promise.all(
 	figures.map(figure =>
-		prFileUrl(figure.dataset.path, figure.dataset.line, figure.querySelector("script.new") ? "R" : "L"),
+		prFileUrl(figure.dataset.path, figure.dataset.line, figure.querySelector("script.new") ? "new" : "old"),
 	),
 )
 
@@ -1002,7 +1026,7 @@ function renderFallbackCode(figure, expanded) {
 }
 
 figures.forEach((figure, index) => {
-	figure.dataset.href = fileUrls[index]
+	if (fileUrls[index]) figure.dataset.href = fileUrls[index]
 	figure.dataset.name ??= figure.dataset.path
 	for (const row of diffLines(toLines(readSide(figure, "old").text), toLines(readSide(figure, "new").text))) {
 		// Blank lines are only there to make the code easy to read, so they do not count as shown lines.
@@ -1014,7 +1038,7 @@ figures.forEach((figure, index) => {
 	fallback.className = "fallback"
 	const head = document.createElement("div")
 	head.className = "fallback-head"
-	head.append(githubLink(figure.dataset.href, figure.dataset.name))
+	head.append(externalLink(figure.dataset.href, figure.dataset.name))
 	fallback.append(head, renderFallbackCode(figure, false))
 	const viewer = document.createElement("div")
 	viewer.className = "pierre"
@@ -1090,8 +1114,8 @@ for (const group of document.querySelectorAll(".tests [data-path]")) {
 		const { change, line, renamedFrom } = item.dataset
 		item.title = renamedFrom ? "Renamed test" : TEST_CHANGE_TITLES[change]
 		// A removed test has its line at the merge base.
-		const url = await prFileUrl(group.dataset.path, line, change === "removed" ? "L" : "R")
-		item.replaceChildren(githubLink(url, item.textContent))
+		const url = await prFileUrl(group.dataset.path, line, change === "removed" ? "old" : "new")
+		item.replaceChildren(externalLink(url, item.textContent))
 	}
 }
 
@@ -1123,26 +1147,29 @@ counts.append(
 )
 stats.prepend(counts)
 
-// Like all GitHub link texts on the page, it leaves out the owner of the PR's repo.
-const prLink = githubLink(`${repoUrl}/pull/${pr}`, `${repoUrl.split("/").at(-1)}#${pr} ↗`)
-prLink.className = "pr-link"
-prLink.title = "Open the pull request on GitHub"
-const title = document.querySelector("main header h1")
-const titleRow = document.createElement("div")
-titleRow.className = "title-row"
-title.replaceWith(titleRow)
-// The float must come before the title, so that the title flows around it.
-titleRow.append(prLink, title)
-// The text leaves space for the link (see the CSS). The link gets wider when its font loads.
-new ResizeObserver(() => {
-	prLink.closest("main").style.setProperty("--pr-link-width", `${prLink.offsetWidth}px`)
-}).observe(prLink)
+// Like all link texts on the page, it leaves out the owner of the PR's repo. A branch with no PR has no link.
+if (prUrl) {
+	const prLink = externalLink(prUrl, `${fillUrl(host.prText) ?? host.name} ↗`)
+	prLink.className = "pr-link"
+	prLink.title = `Open the ${host.prNoun ?? "PR"} on ${host.name}`
+	const title = document.querySelector("main header h1")
+	const titleRow = document.createElement("div")
+	titleRow.className = "title-row"
+	title.replaceWith(titleRow)
+	// The float must come before the title, so that the title flows around it.
+	titleRow.append(prLink, title)
+	// The text leaves space for the link and its 24px margin (see the CSS). The link gets wider when its font loads.
+	new ResizeObserver(() => {
+		prLink.closest("main").style.setProperty("--pr-link-space", `${prLink.offsetWidth + 24}px`)
+	}).observe(prLink)
+}
 
 // The page is published again at the same URL after each update of the PR, and the viewer reloads it. The page keeps the
 // block that the reader was reading, and the reader's distance into it, so the reload does not move the reader. A block
 // is a part of the page text (a heading, a note, a diff), found again by its text or its file, because an update can
 // add or remove blocks around it. Pixel positions alone would point elsewhere after a change or after the diffs load.
-const SCROLL_KEY = `scroll:${repoUrl}/pull/${pr}`
+// A branch with no PR keeps its position by the page title.
+const SCROLL_KEY = `scroll:${prUrl ?? document.title}`
 const scrollBlocks = () => [...document.querySelectorAll("main > header > *, main section > *")]
 
 function scrollBlockKeys() {
@@ -1228,10 +1255,15 @@ function styleChart(svg, links) {
 		if (ends.some(id => mutedIds.has(id))) arrow.classList.add("muted")
 	}
 	for (const box of svg.querySelectorAll("g.node")) {
-		const path = links[box.querySelector("title").textContent]
-		if (!path) continue
+		const target = links[box.querySelector("title").textContent]
+		if (!target) continue
+		// data-links writes a line as `<path>#L10` and a range as `<path>#L10-L20`. A host that can't link a range or a
+		// line links the file.
+		const [, path, start, end] = target.match(/^(.*?)(?:#L(\d+)(?:-L(\d+))?)?$/)
+		const url = (end && host.lineRangeUrl) || (start && host.lineUrl) || host.fileUrl
+		if (!url) continue
 		const link = document.createElementNS("http://www.w3.org/2000/svg", "a")
-		link.setAttribute("href", blobUrl + path)
+		link.setAttribute("href", fillUrl(url, { path, start, end, line: start }))
 		link.setAttribute("target", "_blank")
 		link.setAttribute("rel", "noopener")
 		box.replaceWith(link)
@@ -1502,14 +1534,15 @@ try {
 			hunkSeparators: "simple",
 			// The code here is shortened, so the real line numbers would mislead.
 			disableLineNumbers: true,
-			// As GitHub’s “Hide whitespace”: a line that only changes its indentation is an unchanged row, not a removed
-			// and an added line. Each side of the split view keeps its own indentation.
+			// As the “Hide whitespace” option of code hosts: a line that only changes its indentation is an unchanged row,
+			// not a removed and an added line. Each side of the split view keeps its own indentation.
 			parseDiffOptions: { ignoreWhitespace: true },
 			renderHeaderMetadata: () => {
-				const link = githubLink(href, "↗")
+				if (!href) return null
+				const link = externalLink(href, "↗")
 				link.className = "diff-link"
-				link.ariaLabel = "Open on GitHub"
-				link.title = "Open on GitHub"
+				link.ariaLabel = `Open on ${host.name}`
+				link.title = `Open on ${host.name}`
 				return link
 			},
 			renderAnnotation: annotation => annotation.metadata.cloneNode(true),

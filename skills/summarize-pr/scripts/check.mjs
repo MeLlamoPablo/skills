@@ -46,16 +46,48 @@ if (/class="eyebrow"/.test(html)) errors.push("The page has an eyebrow. Do not u
 
 const main = html.match(/<main([^>]*)>/)?.[1] ?? ""
 const attribute = (attributes, name) => attributes.match(new RegExp(`${name}="([^"]*)"`))?.[1]
-if (!/^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(attribute(main, "data-repo-url") ?? "")) {
-	errors.push('<main data-repo-url> must be "https://github.com/<owner>/<repo>".')
+
+// The template makes every link to the host from the #host block, which gather.sh writes as host.json. Each URL in it
+// is a template, or null when the host can't make that link. A branch summarized with git alone has only null URLs.
+// scripts/hosts/README.md describes the keys.
+const HOST_URLS = "prUrl changesUrl changedFileUrl oldLineUrl newLineUrl fileUrl lineUrl lineRangeUrl".split(" ")
+let host
+try {
+	host = JSON.parse(html.match(/<script type="application\/json" id="host">([\s\S]*?)<\/script>/)?.[1] ?? "")
+} catch {
+	errors.push("The #host block is not the contents of host.json. Copy host.json from the gather.sh folder into it.")
 }
-if (!/^\d+$/.test(attribute(main, "data-pr") ?? "")) errors.push("<main data-pr> must be the PR number.")
+if (host) {
+	const wrong = ["adapter", "name"].filter(key => typeof host[key] !== "string")
+	for (const key of [...HOST_URLS, "prNoun", "prText", "summaryLink"]) {
+		if (host[key] !== null && typeof host[key] !== "string") wrong.push(key)
+	}
+	if (!Array.isArray(host.references)) wrong.push("references")
+	if (typeof host.markdownBreaks !== "boolean") wrong.push("markdownBreaks")
+	if (wrong.length > 0) errors.push(`The #host block has no valid ${wrong.join(", ")}. Copy host.json into it again.`)
+	const hostJsonPath = join(dirname(pagePath), "host.json")
+	if (existsSync(hostJsonPath) && JSON.stringify(JSON.parse(readFileSync(hostJsonPath, "utf8"))) !== JSON.stringify(host)) {
+		errors.push("The #host block is not the same as host.json. Copy host.json into it again.")
+	}
+}
+const hostUrls = host ? [...HOST_URLS.map(key => host[key]), ...(host.references ?? []).map(({ url }) => url)] : []
+const usesSlot = slots => hostUrls.some(url => typeof url === "string" && slots.some(slot => url.includes(`{${slot}}`)))
+
+// Any host passes, self-hosted ones too. A repo can be in nested groups, so its path can have more than two segments.
+const repoUrl = attribute(main, "data-repo-url") ?? ""
+if (usesSlot(["repo", "origin", "name"]) && !/^https?:\/\/[^/]+(\/[^/]+){2,}$/.test(repoUrl)) {
+	errors.push('<main data-repo-url> must be the web URL of the repo, repoUrl in pr.json: "https://<host>/<owner>/<repo>".')
+}
+const pr = attribute(main, "data-pr") ?? ""
+if (!/^\d+$/.test(pr) && !(pr === "" && !usesSlot(["pr"]))) {
+	errors.push("<main data-pr> must be the PR number. It is empty only for a branch with no PR (no number in pr.json).")
+}
 if (!/^[0-9a-f]{40}$/.test(attribute(main, "data-head-sha") ?? "")) {
 	errors.push("<main data-head-sha> must be the full SHA of the PR head commit.")
 }
 
-// GitHub link texts leave out the owner of the PR's repo: "api#123", not "acme/api#123".
-const owner = attribute(main, "data-repo-url")?.split("/")[3]
+// Link texts leave out the owner of the PR's repo: "api#123", not "acme/api#123".
+const owner = repoUrl.split("/")[3]
 for (const [, text] of withoutCode.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)) {
 	if (owner && text.startsWith(`${owner}/`)) {
 		errors.push(`The link text "${text}" names the owner of the PR's repo. Write "${text.slice(owner.length + 1)}".`)
@@ -129,7 +161,7 @@ const stats = html.match(/<div class="stats"([^>]*)>/)?.[1] ?? ""
 const prAdditions = Number(attribute(stats, "data-pr-additions"))
 const prDeletions = Number(attribute(stats, "data-pr-deletions"))
 if (!Number.isInteger(prAdditions) || !Number.isInteger(prDeletions)) {
-	errors.push("<div class=stats> needs data-pr-additions and data-pr-deletions from GitHub.")
+	errors.push("<div class=stats> needs data-pr-additions and data-pr-deletions from pr.json.")
 }
 
 // shown-lines.mjs has the same diff as the page, so the budget matches the counts in the page header. It also has the
@@ -175,10 +207,13 @@ const prJsonPath = join(dirname(pagePath), "pr.json")
 const git = (...args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
 let mergeBase
 if (existsSync(prJsonPath)) {
-	const { baseRefName, headRefOid } = JSON.parse(readFileSync(prJsonPath, "utf8"))
+	// Some hosts give the merge base. Else it is the merge base with the base branch of the remote.
+	const { baseRefName, headRefOid, mergeBaseOid } = JSON.parse(readFileSync(prJsonPath, "utf8"))
 	try {
-		mergeBase = git("merge-base", `origin/${baseRefName}`, headRefOid).trim()
+		mergeBase = mergeBaseOid ?? git("merge-base", `origin/${baseRefName}`, headRefOid).trim()
+		git("cat-file", "-e", `${mergeBase}^{commit}`)
 	} catch {
+		mergeBase = undefined
 		warnings.push("Cannot find the merge base, so moved or extracted code is not checked. Run the check from the repo of the PR.")
 	}
 }
@@ -333,8 +368,10 @@ for (const [, attributes, markdown] of html.matchAll(
 	/<div class="comment"([^>]*)>(<script type="text\/markdown">\n(?![ \t\n]))?/g,
 )) {
 	if (!attribute(attributes, "data-author")) errors.push("A comment has no data-author.")
-	if (!/^https:\/\/github\.com\/\S+#discussion_r\d+$/.test(attribute(attributes, "data-href") ?? "")) {
-		errors.push(`A comment has data-href="${attribute(attributes, "data-href")}", not the URL of a GitHub review comment.`)
+	// Every host links a review comment as a page of the repo with the comment's anchor.
+	const href = attribute(attributes, "data-href") ?? ""
+	if (!/^https?:\/\/\S+#\S+$/.test(href) || (repoUrl && !href.startsWith(`${repoUrl}/`))) {
+		errors.push(`A comment has data-href="${attribute(attributes, "data-href")}", not the URL of a review comment.`)
 	}
 	if (!markdown) {
 		errors.push(

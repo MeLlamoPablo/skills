@@ -24,4 +24,4 @@ npx skills update -g
 
 ## Requirements
 
-`summarize-pr` needs `gh` (signed in), `jq` and Node.js. To check its charts, it also needs Chrome and `puppeteer-core`, which the skill installs the first time.
+`summarize-pr` needs `git`, `jq`, `curl` and Node.js. To read review threads and link to the PR, it also needs what the adapter of your host needs (a CLI that is signed in, or a token), as [its list of adapters](skills/summarize-pr/scripts/hosts/README.md) says. For a repo that no adapter serves, or a branch with no PR yet, it summarizes the branch with git alone. To check its charts, it also needs Chrome and `puppeteer-core`, which the skill installs the first time.
